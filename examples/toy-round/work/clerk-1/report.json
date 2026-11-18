@@ -1,0 +1,13 @@
+{
+  "round": "toy-1",
+  "stage": "clerk-1",
+  "charter_ack": "charm: one small parallel chunk of work, done by an agent on a private copy, which returns a patch.",
+  "merged": ["t1 (charm-t1/patch.diff: h1 lowercase)", "t2 (charm-t2/patch.diff: .cta min-height/min-width 44px)", "t3 (charm-t3/patch.diff: #count derived from #list li count)"],
+  "conflicts": ["none: the three patches touch disjoint lines (h1 line 9, .cta rule line 6, script line 16); patch -p0 applied all three cleanly in order with no fuzz or offset"],
+  "integration_fixes": [],
+  "evidence": ["one ptest pool via runSuites (work/clerk-1/merged-tests.mjs; t1, t2 and t3 test bodies copied verbatim), failOnConsoleError on: 26/26 passed (t1 2/2, t2 22/22, t3 2/2), 0 page errors, 0 console errors, wall 5382 ms", "t2: new build is 54.6x44 at all 11 viewports (base is 38 px tall); padding, border, colours, font and text are the same as base; no h-scroll", "t3: '3 items' on load, '4 items' in the 4-li variant, click writes 'started'; '3 items' is not hardcoded in the source", "screenshots viewed: work/clerk-1/out/t1/t1-360x640--h1.png, work/clerk-1/out/t2/t2-360x640-{new,base}--cta.png"],
+  "notes": ["at 430x932 the button moves up by 60 px (y 200 -> 140) because the lowercase heading now fits on one line; this follows directly from T1 and is not a regression"],
+  "snapshot_src": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/src.html",
+  "snapshot_built": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/built.html",
+  "open_issues": ["the auditor's full regression (toy-suite.mjs) has not run yet; by brief, it is not part of this stage"]
+}

@@ -1,0 +1,3 @@
+# auditor findings (verify-1)
+- AUD-1 (minor, requirement "test"): stale assertion. charms/charm-add/test-add.mjs:8 asserts /^- add\(a, b\)$/m, but repair-1 (README-1) deliberately merged the README into one line "- features: add(a, b), greet(name)" (owner: "a README line listing both features"). Pool 2 result: 2/3, fails only on this check. Successor test already exists: test.mjs 'README lists add'. Edit: change line 8's regex to /^- features: .*add\(a, b\)/m (or retire the test; test.mjs covers it).
+- note: repair-1-clerk/built contains only index.html (no test*.mjs, so the brief's command gives "no matches"). Suite ran in the snapshot source root repair-1-clerk/src, which is byte-identical to work/target.

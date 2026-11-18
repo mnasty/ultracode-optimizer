@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>toy</title>
+<style>
+body{margin:0;font:16px/1.5 Georgia,serif;background:#1d1f3a;color:#f2ead3}
+main{max-width:640px;margin:0 auto;padding:24px 16px}
+h1{font-size:40px;margin:0 0 12px;color:#c9a45c}
+.cta{display:inline-block;padding:6px 10px;border:1px solid #f2ead3;background:none;color:#f2ead3;font:inherit}
+ul{padding-left:20px}
+</style></head><body><main>
+<h1 id="title">welcome to the toy</h1>
+<p id="lede">a tiny page for testing the mayor's round engine.</p>
+<button class="cta" id="go" type="button">start</button>
+<ul id="list"><li>one</li><li>two</li><li>three</li></ul>
+<p id="count"></p>
+</main>
+<script>
+document.getElementById('go').addEventListener('click', () => { document.getElementById('count').textContent = 'started'; });
+</script></body></html>

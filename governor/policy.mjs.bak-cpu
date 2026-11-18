@@ -1,0 +1,103 @@
+/* the governor's decisions, as pure functions of the sample history (so they are unit-tested without a machine).
+
+   No fixed caps on browsers, pages or agents: every limit is derived from live signals and the system's own capacity.
+   Paging is welcome (compressed memory and swap are fast on Apple silicon); the governor only steps in when the machine is
+   about to run out:
+     memory  headroom = reclaimable RAM (free + speculative + purgeable + inactive) + swap room (free disk on the VM volume).
+             need = the largest one-tick drop seen, or the current drain rate over the look-ahead, or one swap file (the OS
+             must be able to create the next one), whichever is larger.
+             hold below 2 x need; shed below 1 x need, when macOS reports critical pressure, or when the disk can't take
+             another swap file.
+     procs   headroom = kern.maxproc - processes (and the per-user limit for ours). need = the largest step, the growth rate
+             over the look-ahead, or 2% of the table, whichever is larger. hold below 2 x need; shed below 1 x need.
+     thermal macOS thermal pressure: heavy -> hold, trapping or worse -> shed; and hold while the fans are already at full
+             speed and the dies are still at or above the hot end of the fan curve.
+   level: 'ok' (grow as cpu allows), 'hold' (start nothing new), 'shed' (cut back). */
+
+export const DEFAULTS = {
+  horizonS: 60,          // look-ahead for drain rates: how far ahead a new process must still fit
+  windowS: 30,           // history window for rates and steps
+  swapFileBytes: 2 ** 30, // macOS creates swap in 1 GiB files on Apple silicon
+  procFloorFrac: 0.02,
+  coolC: 45, hotC: 85,   // fan curve: automatic below coolC, full speed at hotC (85 C = 185 F); 45: ahead of macOS (its own start is about 57 C), for a closed lid in a dock
+  fanDownPerTick: 0.03,  // fans speed up at once and slow down gently
+  fanAutoAfterTicks: 30, // this many cool ticks in a row (or no work at all) hands the fans back to the system
+}
+const RANK = { ok: 0, hold: 1, shed: 2 }
+const GB = b => (b / 2 ** 30).toFixed(1) + ' GB'
+
+const memHeadroom = s => s.ramAvailBytes + s.vmDiskFreeBytes
+const procHeadroom = s => s.maxproc - s.procs
+const userHeadroom = s => (s.maxprocperuid && s.userProcs != null) ? s.maxprocperuid - s.userProcs : Infinity
+
+/** slope (per second) of f over the samples, and the largest single-step drop */
+function trend(win, f) {
+  if (win.length < 2) return { rate: 0, step: 0 }
+  const a = win[0], b = win[win.length - 1], dt = Math.max(1e-3, (b.t - a.t) / 1000)
+  let step = 0
+  for (let i = 1; i < win.length; i++) step = Math.max(step, f(win[i - 1]) - f(win[i]))
+  return { rate: (f(a) - f(b)) / dt, step } // rate > 0: headroom is shrinking
+}
+
+export function assess(history, cfg = DEFAULTS) {
+  const s = history[history.length - 1]
+  if (!s) return { level: 'ok', reasons: ['no sample yet'], metrics: {} }
+  const win = history.filter(h => s.t - h.t <= cfg.windowS * 1000)
+  let level = 'ok'; const reasons = []
+  const raise = (l, why) => { if (RANK[l] > RANK[level]) level = l; reasons.push(`${l}: ${why}`) }
+
+  // memory + swap
+  const H = memHeadroom(s), m = trend(win, memHeadroom)
+  const memNeed = Math.max(m.step, Math.max(0, m.rate) * cfg.horizonS, cfg.swapFileBytes)
+  if (s.pressureLevel >= 4) raise('shed', 'macOS memory pressure is critical')
+  if (s.vmDiskFreeBytes < cfg.swapFileBytes) raise('shed', `only ${GB(s.vmDiskFreeBytes)} free on disk: no room for another swap file`)
+  if (H < memNeed) raise('shed', `memory+swap headroom ${GB(H)} < need ${GB(memNeed)}`)
+  else if (H < 2 * memNeed) raise('hold', `memory+swap headroom ${GB(H)} < 2 x need ${GB(memNeed)}`)
+  // the disk alone must also absorb the swap the current drain implies
+  const swapGrowth = Math.max(0, m.rate) * cfg.horizonS
+  if (s.vmDiskFreeBytes >= cfg.swapFileBytes && s.vmDiskFreeBytes < 2 * cfg.swapFileBytes + swapGrowth)
+    raise('hold', `disk ${GB(s.vmDiskFreeBytes)} can't absorb the swap growth of the next ${cfg.horizonS} s (${GB(swapGrowth)} + 2 swap files)`)
+
+  // process table
+  const P = procHeadroom(s), p = trend(win, procHeadroom)
+  const procNeed = Math.max(p.step, Math.max(0, p.rate) * cfg.horizonS, Math.ceil(s.maxproc * cfg.procFloorFrac))
+  if (P < procNeed) raise('shed', `process table: ${s.procs}/${s.maxproc}, headroom ${P} < need ${procNeed}`)
+  else if (P < 2 * procNeed) raise('hold', `process table: ${s.procs}/${s.maxproc}, headroom ${P} < 2 x need ${procNeed}`)
+  const U = userHeadroom(s)
+  if (U !== Infinity) {
+    const u = trend(win, userHeadroom), uNeed = Math.max(u.step, Math.max(0, u.rate) * cfg.horizonS, Math.ceil(s.maxprocperuid * cfg.procFloorFrac))
+    if (U < uNeed) raise('shed', `per-user processes: ${s.userProcs}/${s.maxprocperuid}`)
+    else if (U < 2 * uNeed) raise('hold', `per-user processes: ${s.userProcs}/${s.maxprocperuid}`)
+  }
+
+  // thermal
+  const tp = s.thermalPressure ?? 0
+  if (tp >= 3) raise('shed', `macOS thermal pressure ${['nominal', 'moderate', 'heavy', 'trapping', 'sleeping'][tp] || tp}`)
+  else if (tp >= 2) raise('hold', 'macOS thermal pressure heavy')
+  const fansMaxed = (s.fans || []).length > 0 && s.fans.every(f => f.max > 0 && f.rpm >= 0.95 * f.max)
+  if (s.cpuMaxC >= cfg.hotC && fansMaxed) raise('hold', `dies at ${s.cpuMaxC} C with the fans already at full speed`)
+
+  return {
+    level, reasons,
+    metrics: {
+      memHeadroomBytes: H, memNeedBytes: memNeed, memDrainBytesPerS: Math.round(m.rate), pressureLevel: s.pressureLevel,
+      ramAvailBytes: s.ramAvailBytes, vmDiskFreeBytes: s.vmDiskFreeBytes, swapUsedBytes: s.swapUsedBytes,
+      procs: s.procs, maxproc: s.maxproc, procHeadroom: P, procNeed, userProcs: s.userProcs, maxprocperuid: s.maxprocperuid,
+      thermalPressure: tp, cpuMaxC: s.cpuMaxC, cpuBusyPct: s.cpuBusyPct, fans: s.fans,
+    },
+  }
+}
+
+/** the fan request: a fraction of each fan's own range, or null for automatic. state carries the last value and the cool streak */
+export function fanTarget(sample, active, state = { frac: null, cool: 0 }, cfg = DEFAULTS) {
+  const T = sample?.cpuMaxC
+  if (!active || T == null || T < 0) return { frac: null, cool: 0 }
+  const want = Math.max(0, Math.min(1, (T - cfg.coolC) / (cfg.hotC - cfg.coolC)))
+  if (want <= 0) {
+    const cool = (state.cool || 0) + 1
+    if (state.frac == null || cool >= cfg.fanAutoAfterTicks) return { frac: null, cool }
+    return { frac: Math.max(0, state.frac - cfg.fanDownPerTick), cool }
+  }
+  const frac = state.frac == null || want >= state.frac ? want : Math.max(want, state.frac - cfg.fanDownPerTick)
+  return { frac: +frac.toFixed(3), cool: 0 }
+}

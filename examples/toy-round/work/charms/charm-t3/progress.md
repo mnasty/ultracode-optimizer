@@ -1,0 +1,3 @@
+- started; src copied
+- script edited, built
+- done: patch.diff + report.json written; test 2/2 ok

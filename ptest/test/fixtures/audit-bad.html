@@ -1,0 +1,26 @@
+<!doctype html><meta charset=utf-8><title>audit-bad</title>
+<style>
+body{margin:0;font:16px/1.4 sans-serif;background:#fff;color:#000}
+header{position:fixed;top:0;left:0;right:0;height:60px;background:#eee}
+header button{width:30px;height:30px;margin:15px}
+.abs{position:absolute;left:20px}
+#bg{position:absolute;left:0;top:0;width:100%;height:900px;z-index:-1}
+.clip{width:80px;overflow:hidden;white-space:nowrap}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.wide{width:2000px;height:10px;background:#ccc}
+</style>
+<header><button id="hb" aria-label="menu">≡</button></header>
+<svg id="bg" viewBox="0 0 10 10" preserveAspectRatio="none"><rect width="10" height="10" fill="#f8f8ff"/></svg>
+<h1 id="under" class="abs" style="top:20px;margin:0;left:200px">under the header</h1>
+<p id="o1" class="abs" style="top:100px;margin:0">overlapping one</p>
+<p id="o2" class="abs" style="top:108px;left:60px;margin:0">overlapping two</p>
+<button id="small" class="abs" style="top:160px;width:40px;height:40px">s</button>
+<button id="b1" class="abs" style="top:220px;width:60px;height:48px">one</button>
+<button id="b2" class="abs" style="top:220px;left:84px;width:60px;height:48px">two</button>
+<div class="abs" style="top:300px;display:flex;align-items:center"><span id="lbl">label</span><svg id="ico" style="margin-left:3px" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg></div>
+<p id="tiny" class="abs" style="top:350px;margin:0;font-size:10px">tiny text</p>
+<div id="clipped" class="abs clip" style="top:400px">this text is far too long for its box</div>
+<span class="sr abs" style="top:100px">screen reader only text</span>
+<p class="abs" style="top:100px;opacity:0;margin:0">invisible overlapping text</p>
+<p class="abs" style="top:100px;clip-path:inset(0 0 100% 0);margin:0">clip-path hidden text</p>
+<div class="abs wide" style="top:500px"></div>

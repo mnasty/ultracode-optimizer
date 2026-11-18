@@ -1,0 +1,31 @@
+<!doctype html><meta charset=utf-8><title>clock probe</title>
+<style>
+#a{width:50px;height:50px;background:red;opacity:1} #a.go{animation:fade 1000ms linear forwards}
+#b{width:50px;height:50px;background:blue;opacity:1;transition:opacity 1000ms linear} #b.go{opacity:0}
+#c::before{content:'x';display:block;opacity:1} #c.go::before{animation:fade 1000ms linear forwards}
+#d{width:50px;height:50px;background:green} #d.go{animation:fade 1000ms linear 1 forwards; animation-play-state:paused} #d.go.run{animation-play-state:running}
+#svg circle{opacity:1}
+@keyframes fade{from{opacity:1}to{opacity:0}}
+</style>
+<div id=a></div><div id=b></div><div id=c></div><div id=d></div>
+<svg id=svg width=50 height=50><circle id=sm cx=25 cy=25 r=20 fill=black><animate attributeName="opacity" from="1" to="0" dur="1s" begin="indefinite" fill="freeze"/></circle></svg>
+<div id=clock></div>
+<script>
+const P = window.P = { t0perf: performance.now(), t0date: Date.now(), minuteTicks: 0, rafAcc: 0, rafN: 0, tl0: document.timeline.currentTime };
+const mins = () => { document.getElementById('clock').textContent = new Date().toISOString().slice(11, 16); };
+mins(); const sched = () => setTimeout(() => { P.minuteTicks++; mins(); sched(); }, 60000 - Date.now() % 60000); sched();
+let last = null; const loop = t => { if (last != null) P.rafAcc += t - last; last = t; P.rafN++; requestAnimationFrame(loop); }; requestAnimationFrame(loop);
+setTimeout(() => {
+  P.startAt = performance.now(); P.tlStart = document.timeline.currentTime;
+  document.getElementById('a').classList.add('go'); document.getElementById('b').classList.add('go'); document.getElementById('c').classList.add('go');
+  document.getElementById('d').classList.add('go'); setTimeout(() => document.getElementById('d').classList.add('run'), 0);
+  P.waapi = document.body.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1000, fill: 'forwards' });
+  document.querySelector('#sm animate').beginElement();
+  const w = new Worker(URL.createObjectURL(new Blob(['const t=Date.now(); setTimeout(()=>postMessage(Date.now()-t), 500)'])));
+  w.onmessage = e => { P.workerAt = performance.now() - P.startAt; P.workerDateDelta = e.data; };
+}, 500);
+window.sample = () => ({ elapsed: performance.now() - P.startAt, dateElapsed: Date.now() - P.t0date, a: +getComputedStyle(document.getElementById('a')).opacity, b: +getComputedStyle(document.getElementById('b')).opacity,
+  c: +getComputedStyle(document.getElementById('c'), '::before').opacity, d: +getComputedStyle(document.getElementById('d')).opacity, waapi: +getComputedStyle(document.body).opacity,
+  smil: +getComputedStyle(document.getElementById('sm')).opacity, tlElapsed: document.timeline.currentTime - P.tlStart, workerAt: P.workerAt ?? null,
+  minuteTicks: P.minuteTicks, clock: document.getElementById('clock').textContent, rafAcc: Math.round(P.rafAcc), rafN: P.rafN });
+</script>

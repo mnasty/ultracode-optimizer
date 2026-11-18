@@ -1,0 +1,1282 @@
+{
+ "name": "clerk-1-targeted",
+ "wallMs": 5382,
+ "sumMs": 42764,
+ "speedup": 7.95,
+ "launchMs": 537,
+ "runMs": 4845,
+ "closeMs": 423,
+ "concurrency": 10,
+ "concurrencySource": "default (cpu count 10, 5 contexts per browser)",
+ "finalConcurrency": 10,
+ "browsers": 2,
+ "seed": null,
+ "cases": 26,
+ "passed": 26,
+ "failed": 0,
+ "ok": true,
+ "backoffs": [],
+ "sys": {
+  "load1": 7.09,
+  "cpuBusyPct": 91,
+  "freeMemPct": 54,
+  "pressureLevel": "normal",
+  "swapUsedMB": 5908.25,
+  "swapUsedDeltaMB": 0,
+  "pageoutsDelta": 25,
+  "swapoutsDelta": 0,
+  "swapinsDelta": 93
+ },
+ "dir": "/Users/mick/dev/web/uc-optimizer/ptest/out/clerk-1-targeted",
+ "results": [
+  {
+   "i": 0,
+   "id": "t1-360x640",
+   "case": {
+    "vp": "360x640",
+    "virtual": true,
+    "name": "t1-360x640",
+    "__suite": 0,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t1"
+   },
+   "ok": true,
+   "ms": 1528,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": "T1 h1 exact lowercase words",
+     "ok": true,
+     "detail": "welcome to the toy"
+    },
+    {
+     "name": "other text unchanged",
+     "ok": true,
+     "detail": {
+      "h1": "welcome to the toy",
+      "lede": "a tiny page for testing the mayor's round engine.",
+      "btn": "start",
+      "hs": 0
+     }
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t1/t1-360x640--h1.png"
+   ],
+   "realtime": [],
+   "value": {
+    "h1": "welcome to the toy",
+    "lede": "a tiny page for testing the mayor's round engine.",
+    "btn": "start",
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 538,
+   "attempts": 1
+  },
+  {
+   "i": 1,
+   "id": "t1-1440x900",
+   "case": {
+    "vp": "1440x900",
+    "virtual": true,
+    "name": "t1-1440x900",
+    "__suite": 0,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t1"
+   },
+   "ok": true,
+   "ms": 1513,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": "T1 h1 exact lowercase words",
+     "ok": true,
+     "detail": "welcome to the toy"
+    },
+    {
+     "name": "other text unchanged",
+     "ok": true,
+     "detail": {
+      "h1": "welcome to the toy",
+      "lede": "a tiny page for testing the mayor's round engine.",
+      "btn": "start",
+      "hs": 0
+     }
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t1/t1-1440x900--h1.png"
+   ],
+   "realtime": [],
+   "value": {
+    "h1": "welcome to the toy",
+    "lede": "a tiny page for testing the mayor's round engine.",
+    "btn": "start",
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 538,
+   "attempts": 1
+  },
+  {
+   "i": 2,
+   "id": "t2-360x640-new",
+   "case": {
+    "vp": "360x640",
+    "build": "new",
+    "virtual": true,
+    "name": "t2-360x640-new",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1773,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": ">= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "look unchanged (padding/border/colors/font/text)",
+     "ok": true,
+     "detail": "{\"w\":54.578125,\"h\":44,\"x\":16,\"y\":224,\"pad\":\"6px 10px\",\"border\":\"1px solid rgb(242, 234, 211)\",\"color\":\"rgb(242, 234, 211)\",\"bg\":\"rgba(0, 0, 0, 0)\",\"font\":\"16px / 24px Georgia, serif\",\"text\":\"start\",\"listTop\":284,\"hs\":0}"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-360x640-new--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 44,
+    "x": 16,
+    "y": 224,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 284,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 538,
+   "attempts": 1
+  },
+  {
+   "i": 3,
+   "id": "t2-360x640-base",
+   "case": {
+    "vp": "360x640",
+    "build": "base",
+    "virtual": true,
+    "name": "t2-360x640-base",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1659,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-360x640-base--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 38,
+    "x": 16,
+    "y": 224,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 278,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 538,
+   "attempts": 1
+  },
+  {
+   "i": 4,
+   "id": "t2-375x667-new",
+   "case": {
+    "vp": "375x667",
+    "build": "new",
+    "virtual": true,
+    "name": "t2-375x667-new",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1781,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": ">= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "look unchanged (padding/border/colors/font/text)",
+     "ok": true,
+     "detail": "{\"w\":54.578125,\"h\":44,\"x\":16,\"y\":200,\"pad\":\"6px 10px\",\"border\":\"1px solid rgb(242, 234, 211)\",\"color\":\"rgb(242, 234, 211)\",\"bg\":\"rgba(0, 0, 0, 0)\",\"font\":\"16px / 24px Georgia, serif\",\"text\":\"start\",\"listTop\":260,\"hs\":0}"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-375x667-new--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 44,
+    "x": 16,
+    "y": 200,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 260,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 538,
+   "attempts": 1
+  },
+  {
+   "i": 5,
+   "id": "t2-375x667-base",
+   "case": {
+    "vp": "375x667",
+    "build": "base",
+    "virtual": true,
+    "name": "t2-375x667-base",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1761,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-375x667-base--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 38,
+    "x": 16,
+    "y": 200,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 254,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 538,
+   "attempts": 1
+  },
+  {
+   "i": 6,
+   "id": "t2-390x844-new",
+   "case": {
+    "vp": "390x844",
+    "build": "new",
+    "virtual": true,
+    "name": "t2-390x844-new",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1656,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": ">= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "look unchanged (padding/border/colors/font/text)",
+     "ok": true,
+     "detail": "{\"w\":54.578125,\"h\":44,\"x\":16,\"y\":200,\"pad\":\"6px 10px\",\"border\":\"1px solid rgb(242, 234, 211)\",\"color\":\"rgb(242, 234, 211)\",\"bg\":\"rgba(0, 0, 0, 0)\",\"font\":\"16px / 24px Georgia, serif\",\"text\":\"start\",\"listTop\":260,\"hs\":0}"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-390x844-new--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 44,
+    "x": 16,
+    "y": 200,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 260,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 538,
+   "attempts": 1
+  },
+  {
+   "i": 7,
+   "id": "t2-390x844-base",
+   "case": {
+    "vp": "390x844",
+    "build": "base",
+    "virtual": true,
+    "name": "t2-390x844-base",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1870,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-390x844-base--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 38,
+    "x": 16,
+    "y": 200,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 254,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 538,
+   "attempts": 1
+  },
+  {
+   "i": 8,
+   "id": "t2-430x932-new",
+   "case": {
+    "vp": "430x932",
+    "build": "new",
+    "virtual": true,
+    "name": "t2-430x932-new",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1793,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": ">= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "look unchanged (padding/border/colors/font/text)",
+     "ok": true,
+     "detail": "{\"w\":54.578125,\"h\":44,\"x\":16,\"y\":140,\"pad\":\"6px 10px\",\"border\":\"1px solid rgb(242, 234, 211)\",\"color\":\"rgb(242, 234, 211)\",\"bg\":\"rgba(0, 0, 0, 0)\",\"font\":\"16px / 24px Georgia, serif\",\"text\":\"start\",\"listTop\":200,\"hs\":0}"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-430x932-new--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 44,
+    "x": 16,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 200,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 538,
+   "attempts": 1
+  },
+  {
+   "i": 9,
+   "id": "t2-430x932-base",
+   "case": {
+    "vp": "430x932",
+    "build": "base",
+    "virtual": true,
+    "name": "t2-430x932-base",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1896,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-430x932-base--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 38,
+    "x": 16,
+    "y": 200,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 254,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 538,
+   "attempts": 1
+  },
+  {
+   "i": 10,
+   "id": "t2-768x1024-new",
+   "case": {
+    "vp": "768x1024",
+    "build": "new",
+    "virtual": true,
+    "name": "t2-768x1024-new",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 2005,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": ">= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "look unchanged (padding/border/colors/font/text)",
+     "ok": true,
+     "detail": "{\"w\":54.578125,\"h\":44,\"x\":64,\"y\":140,\"pad\":\"6px 10px\",\"border\":\"1px solid rgb(242, 234, 211)\",\"color\":\"rgb(242, 234, 211)\",\"bg\":\"rgba(0, 0, 0, 0)\",\"font\":\"16px / 24px Georgia, serif\",\"text\":\"start\",\"listTop\":200,\"hs\":0}"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-768x1024-new--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 44,
+    "x": 64,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 200,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 2052,
+   "attempts": 1
+  },
+  {
+   "i": 11,
+   "id": "t2-768x1024-base",
+   "case": {
+    "vp": "768x1024",
+    "build": "base",
+    "virtual": true,
+    "name": "t2-768x1024-base",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1919,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-768x1024-base--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 38,
+    "x": 64,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 194,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 2065,
+   "attempts": 1
+  },
+  {
+   "i": 12,
+   "id": "t2-1024x768-new",
+   "case": {
+    "vp": "1024x768",
+    "build": "new",
+    "virtual": true,
+    "name": "t2-1024x768-new",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1800,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": ">= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "look unchanged (padding/border/colors/font/text)",
+     "ok": true,
+     "detail": "{\"w\":54.578125,\"h\":44,\"x\":192,\"y\":140,\"pad\":\"6px 10px\",\"border\":\"1px solid rgb(242, 234, 211)\",\"color\":\"rgb(242, 234, 211)\",\"bg\":\"rgba(0, 0, 0, 0)\",\"font\":\"16px / 24px Georgia, serif\",\"text\":\"start\",\"listTop\":200,\"hs\":0}"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-1024x768-new--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 44,
+    "x": 192,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 200,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 2194,
+   "attempts": 1
+  },
+  {
+   "i": 13,
+   "id": "t2-1024x768-base",
+   "case": {
+    "vp": "1024x768",
+    "build": "base",
+    "virtual": true,
+    "name": "t2-1024x768-base",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 2105,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-1024x768-base--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 38,
+    "x": 192,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 194,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 2197,
+   "attempts": 1
+  },
+  {
+   "i": 14,
+   "id": "t2-1280x800-new",
+   "case": {
+    "vp": "1280x800",
+    "build": "new",
+    "virtual": true,
+    "name": "t2-1280x800-new",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 2011,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": ">= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "look unchanged (padding/border/colors/font/text)",
+     "ok": true,
+     "detail": "{\"w\":54.578125,\"h\":44,\"x\":320,\"y\":140,\"pad\":\"6px 10px\",\"border\":\"1px solid rgb(242, 234, 211)\",\"color\":\"rgb(242, 234, 211)\",\"bg\":\"rgba(0, 0, 0, 0)\",\"font\":\"16px / 24px Georgia, serif\",\"text\":\"start\",\"listTop\":200,\"hs\":0}"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-1280x800-new--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 44,
+    "x": 320,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 200,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 2299,
+   "attempts": 1
+  },
+  {
+   "i": 15,
+   "id": "t2-1280x800-base",
+   "case": {
+    "vp": "1280x800",
+    "build": "base",
+    "virtual": true,
+    "name": "t2-1280x800-base",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1621,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-1280x800-base--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 38,
+    "x": 320,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 194,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 2311,
+   "attempts": 1
+  },
+  {
+   "i": 16,
+   "id": "t2-1440x900-new",
+   "case": {
+    "vp": "1440x900",
+    "build": "new",
+    "virtual": true,
+    "name": "t2-1440x900-new",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1916,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": ">= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "look unchanged (padding/border/colors/font/text)",
+     "ok": true,
+     "detail": "{\"w\":54.578125,\"h\":44,\"x\":400,\"y\":140,\"pad\":\"6px 10px\",\"border\":\"1px solid rgb(242, 234, 211)\",\"color\":\"rgb(242, 234, 211)\",\"bg\":\"rgba(0, 0, 0, 0)\",\"font\":\"16px / 24px Georgia, serif\",\"text\":\"start\",\"listTop\":200,\"hs\":0}"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-1440x900-new--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 44,
+    "x": 400,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 200,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 2319,
+   "attempts": 1
+  },
+  {
+   "i": 17,
+   "id": "t2-1440x900-base",
+   "case": {
+    "vp": "1440x900",
+    "build": "base",
+    "virtual": true,
+    "name": "t2-1440x900-base",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1669,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-1440x900-base--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 38,
+    "x": 400,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 194,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 2331,
+   "attempts": 1
+  },
+  {
+   "i": 18,
+   "id": "t2-1920x1080-new",
+   "case": {
+    "vp": "1920x1080",
+    "build": "new",
+    "virtual": true,
+    "name": "t2-1920x1080-new",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1641,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": ">= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "look unchanged (padding/border/colors/font/text)",
+     "ok": true,
+     "detail": "{\"w\":54.578125,\"h\":44,\"x\":640,\"y\":140,\"pad\":\"6px 10px\",\"border\":\"1px solid rgb(242, 234, 211)\",\"color\":\"rgb(242, 234, 211)\",\"bg\":\"rgba(0, 0, 0, 0)\",\"font\":\"16px / 24px Georgia, serif\",\"text\":\"start\",\"listTop\":200,\"hs\":0}"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-1920x1080-new--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 44,
+    "x": 640,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 200,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 2408,
+   "attempts": 1
+  },
+  {
+   "i": 19,
+   "id": "t2-1920x1080-base",
+   "case": {
+    "vp": "1920x1080",
+    "build": "base",
+    "virtual": true,
+    "name": "t2-1920x1080-base",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1632,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-1920x1080-base--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 38,
+    "x": 640,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 194,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 2434,
+   "attempts": 1
+  },
+  {
+   "i": 20,
+   "id": "t2-2560x1440-new",
+   "case": {
+    "vp": "2560x1440",
+    "build": "new",
+    "virtual": true,
+    "name": "t2-2560x1440-new",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1334,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": ">= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "look unchanged (padding/border/colors/font/text)",
+     "ok": true,
+     "detail": "{\"w\":54.578125,\"h\":44,\"x\":960,\"y\":140,\"pad\":\"6px 10px\",\"border\":\"1px solid rgb(242, 234, 211)\",\"color\":\"rgb(242, 234, 211)\",\"bg\":\"rgba(0, 0, 0, 0)\",\"font\":\"16px / 24px Georgia, serif\",\"text\":\"start\",\"listTop\":200,\"hs\":0}"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-2560x1440-new--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 44,
+    "x": 960,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 200,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 3932,
+   "attempts": 1
+  },
+  {
+   "i": 21,
+   "id": "t2-2560x1440-base",
+   "case": {
+    "vp": "2560x1440",
+    "build": "base",
+    "virtual": true,
+    "name": "t2-2560x1440-base",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1331,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-2560x1440-base--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 38,
+    "x": 960,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 194,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 3985,
+   "attempts": 1
+  },
+  {
+   "i": 22,
+   "id": "t2-3440x1440-new",
+   "case": {
+    "vp": "3440x1440",
+    "build": "new",
+    "virtual": true,
+    "name": "t2-3440x1440-new",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1387,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": ">= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "look unchanged (padding/border/colors/font/text)",
+     "ok": true,
+     "detail": "{\"w\":54.578125,\"h\":44,\"x\":1400,\"y\":140,\"pad\":\"6px 10px\",\"border\":\"1px solid rgb(242, 234, 211)\",\"color\":\"rgb(242, 234, 211)\",\"bg\":\"rgba(0, 0, 0, 0)\",\"font\":\"16px / 24px Georgia, serif\",\"text\":\"start\",\"listTop\":200,\"hs\":0}"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-3440x1440-new--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 44,
+    "x": 1400,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 200,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 3994,
+   "attempts": 1
+  },
+  {
+   "i": 23,
+   "id": "t2-3440x1440-base",
+   "case": {
+    "vp": "3440x1440",
+    "build": "base",
+    "virtual": true,
+    "name": "t2-3440x1440-base",
+    "__suite": 1,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2"
+   },
+   "ok": true,
+   "ms": 1307,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [],
+   "shots": [
+    "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t2/t2-3440x1440-base--cta.png"
+   ],
+   "realtime": [],
+   "value": {
+    "w": 54.578125,
+    "h": 38,
+    "x": 1400,
+    "y": 140,
+    "pad": "6px 10px",
+    "border": "1px solid rgb(242, 234, 211)",
+    "color": "rgb(242, 234, 211)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "font": "16px / 24px Georgia, serif",
+    "text": "start",
+    "listTop": 194,
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 4000,
+   "attempts": 1
+  },
+  {
+   "i": 24,
+   "id": "t3-360x640-built--users-mick-dev-web-mayor-examples-toy-round-built.html-3-items",
+   "case": {
+    "vp": "360x640",
+    "variant": "built",
+    "file": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/built.html",
+    "want": "3 items",
+    "virtual": true,
+    "name": "t3-360x640-built--users-mick-dev-web-mayor-examples-toy-round-built.html-3-items",
+    "__suite": 2,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t3"
+   },
+   "ok": true,
+   "ms": 936,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": "count on load",
+     "ok": true,
+     "detail": "3 items"
+    },
+    {
+     "name": "start writes started",
+     "ok": true,
+     "detail": "started"
+    }
+   ],
+   "shots": [],
+   "realtime": [],
+   "value": {
+    "before": "3 items",
+    "after": "started"
+   },
+   "error": null,
+   "startMs": 4049,
+   "attempts": 1
+  },
+  {
+   "i": 25,
+   "id": "t3-360x640-four--users-mick-dev-web-mayor-examples-toy-round-work-clerk-1-out-t3-variant.html-4-items",
+   "case": {
+    "vp": "360x640",
+    "variant": "four",
+    "file": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t3-variant.html",
+    "want": "4 items",
+    "virtual": true,
+    "name": "t3-360x640-four--users-mick-dev-web-mayor-examples-toy-round-work-clerk-1-out-t3-variant.html-4-items",
+    "__suite": 2,
+    "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/out/t3"
+   },
+   "ok": true,
+   "ms": 921,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": "count on load",
+     "ok": true,
+     "detail": "4 items"
+    },
+    {
+     "name": "start writes started",
+     "ok": true,
+     "detail": "started"
+    }
+   ],
+   "shots": [],
+   "realtime": [],
+   "value": {
+    "before": "4 items",
+    "after": "started"
+   },
+   "error": null,
+   "startMs": 4056,
+   "attempts": 1
+  }
+ ]
+}

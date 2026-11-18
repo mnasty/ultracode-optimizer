@@ -1,0 +1,7 @@
+{
+  "name": "uc-optimizer",
+  "private": true,
+  "type": "module",
+  "description": "the mayor's office: a preserved charter for the driving claude session, the ptest parallel virtual-time browser harness, and the round engine that fans work out to small parallel charms",
+  "dependencies": { "playwright-core": "1.49.1" }
+}

@@ -1,0 +1,13 @@
+{"charter_ack":"charm: one small parallel chunk of work, done by an agent on a private copy, which returns a patch.",
+"summary":"Final verify of work/repair-1-clerk/built.html: T1, T2, T3 and standing all resolved. One ptest runMatrix, base/built/4-item variant x 5 viewports (320-1440): 15/15 ok, 0 page and 0 console errors (failOnConsoleError on), wall 4.2 s. Only deviation from the owner's literal words is h1 text-wrap:balance (LOOK-1 repair), flagged as a minor owner decision with recommendation keep.",
+"ready_for_owner":true,
+"per_item":[
+{"id":"T1","status":"resolved","evidence":"h1 textContent 'welcome to the toy' at all 5 vps (base 'Welcome To The Toy', same words, toLowerCase match); h1 colour/size/weight/margins identical to base; screenshot 360x640 and 1440x900 viewed."},
+{"id":"T2","status":"resolved","evidence":"#go measured 54.58x44 at 320x568, 360x640, 390x844, 768x1024, 1440x900 (base 54.58x38); only computed-style diffs are min-height/min-width 44px; border, colours, padding, font identical; label inset top/bottom 12/13 (base 9/10), sides 11/11; screenshots show same outlined button, 6 px taller."},
+{"id":"T3","status":"resolved","evidence":"#count reads '3 items' on load at all vps and its top >= #list bottom; script uses querySelectorAll('#list li').length; a variant copy with a 4th li reads '4 items' (derived, not hard-coded); clicking #go sets 'started' in built and variant at all vps."},
+{"id":"standing","status":"resolved","evidence":"documentElement.scrollWidth - innerWidth = 0 at 320/360/390/768/1440; 0 page and 0 console errors across 15 cases; element-by-element style/geometry diff vs base.html shows only the h1 text (+ text-wrap:balance), #go height 38->44 with min sizes, list/#count shifted down 6 px as a consequence of T2, #count now filled; title unchanged."}
+],
+"new_problems":[],
+"owner_decisions":["h1 text-wrap:balance (added by repair for inspector finding LOOK-1, not in the owner's words): at 320-390 px the heading breaks 'welcome / to the toy' instead of 'welcome to the / toy'; no effect at 768+ (one line). Recommendation: keep."],
+"tests":["/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/verify-1/ver-all/ver.mjs"],
+"data":"/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/verify-1/ver-all/out/ver.json"}

@@ -1,0 +1,143 @@
+{
+ "name": "toy-suite",
+ "wallMs": 938,
+ "sumMs": 965,
+ "speedup": 1.03,
+ "launchMs": 434,
+ "runMs": 504,
+ "closeMs": 936,
+ "concurrency": 2,
+ "concurrencySource": "env PTEST_CONCURRENCY",
+ "finalConcurrency": 2,
+ "browsers": 1,
+ "seed": null,
+ "cases": 2,
+ "passed": 2,
+ "failed": 0,
+ "ok": true,
+ "backoffs": [],
+ "sys": {
+  "load1": 5.75,
+  "cpuBusyPct": 48,
+  "freeMemPct": 58,
+  "pressureLevel": "normal",
+  "swapUsedMB": 5844.25,
+  "swapUsedDeltaMB": 0,
+  "pageoutsDelta": 0,
+  "swapoutsDelta": 0,
+  "swapinsDelta": 4
+ },
+ "dir": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/verify-1/auditor/out/suite",
+ "results": [
+  {
+   "i": 0,
+   "id": "360x640",
+   "case": {
+    "vp": "360x640",
+    "virtual": true
+   },
+   "ok": true,
+   "ms": 463,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": "T1 lowercase heading",
+     "ok": true,
+     "detail": "welcome to the toy"
+    },
+    {
+     "name": "T2 button >= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "T3 count on load",
+     "ok": true,
+     "detail": "3 items"
+    },
+    {
+     "name": "T3 start still works",
+     "ok": true,
+     "detail": "started"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [],
+   "realtime": [],
+   "value": {
+    "h1": "welcome to the toy",
+    "bw": 54.578125,
+    "bh": 44,
+    "count": "3 items",
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 435,
+   "attempts": 1
+  },
+  {
+   "i": 1,
+   "id": "1440x900",
+   "case": {
+    "vp": "1440x900",
+    "virtual": true
+   },
+   "ok": true,
+   "ms": 502,
+   "realWaitMs": 0,
+   "pageErrors": [],
+   "consoleErrors": [],
+   "checks": [
+    {
+     "name": "T1 lowercase heading",
+     "ok": true,
+     "detail": "welcome to the toy"
+    },
+    {
+     "name": "T2 button >= 44x44",
+     "ok": true,
+     "detail": [
+      54.578125,
+      44
+     ]
+    },
+    {
+     "name": "T3 count on load",
+     "ok": true,
+     "detail": "3 items"
+    },
+    {
+     "name": "T3 start still works",
+     "ok": true,
+     "detail": "started"
+    },
+    {
+     "name": "no h-scroll",
+     "ok": true,
+     "detail": 0
+    }
+   ],
+   "shots": [],
+   "realtime": [],
+   "value": {
+    "h1": "welcome to the toy",
+    "bw": 54.578125,
+    "bh": 44,
+    "count": "3 items",
+    "hs": 0
+   },
+   "error": null,
+   "startMs": 435,
+   "attempts": 1
+  }
+ ]
+}

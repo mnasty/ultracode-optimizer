@@ -1,0 +1,85 @@
+// the real governor daemon, gate and fan request on this Mac (each test uses its own state and lease dirs)
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { spawn, execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+
+const HERE = path.dirname(fileURLToPath(import.meta.url)), GOV = path.join(HERE, '..', 'governor.mjs'), GATE = path.join(HERE, '..', 'gate.mjs')
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ucgov-'))
+const envFor = (d, l, extra = {}) => ({ ...process.env, UC_GOVERNOR_DIR: d, PTEST_LEASE_DIR: l, ...extra })
+const readJ = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')) } catch { return null } }
+async function until(f, ms = 8000) { const t = Date.now(); while (Date.now() - t < ms) { const v = f(); if (v) return v; await sleep(100) } return null }
+
+test('the daemon publishes live state every second from real sensors, and the fan request stays automatic with no work', async () => {
+  const d = tmp(), l = tmp()
+  const p = spawn(process.execPath, [GOV, 'daemon'], { env: envFor(d, l), stdio: 'ignore' })
+  try {
+    const s1 = await until(() => readJ(path.join(d, 'governor.json')))
+    assert.ok(s1, 'state published')
+    assert.ok(['ok', 'hold', 'shed'].includes(s1.level))
+    assert.ok(s1.metrics.maxproc > 0 && s1.metrics.procs > 0, 'process table read')
+    assert.ok(s1.metrics.vmDiskFreeBytes > 0 && s1.metrics.ramAvailBytes > 0, 'memory + swap room read')
+    assert.ok(s1.metrics.cpuMaxC > 0 && s1.metrics.cpuMaxC < 120, 'die temperature read: ' + s1.metrics.cpuMaxC)
+    assert.ok(Array.isArray(s1.metrics.fans) && s1.metrics.fans.length > 0, 'fans read')
+    await sleep(2200)
+    const s2 = readJ(path.join(d, 'governor.json'))
+    assert.ok(s2.t > s1.t, 'refreshed')
+    assert.equal(readJ(path.join(d, 'fan-request.json')).frac, null, 'no work: fans automatic')
+    assert.equal(s2.activity.active, false)
+  } finally { p.kill('SIGTERM') }
+  await sleep(500)
+  assert.equal(readJ(path.join(d, 'fan-request.json')).frac, null, 'stopped: fans automatic')
+  assert.ok(!fs.existsSync(path.join(d, 'governor.pid')), 'pid file removed')
+})
+
+test('a gate marks live work while its command runs and passes the exit code through', async () => {
+  const d = tmp(), l = tmp()
+  const gov = spawn(process.execPath, [GOV, 'daemon'], { env: envFor(d, l), stdio: 'ignore' })
+  try {
+    await until(() => readJ(path.join(d, 'governor.json')))
+    const g = spawn(process.execPath, [GATE, '--name', 'probe', '--', 'sh', '-c', 'sleep 3; exit 7'], { env: envFor(d, l), stdio: 'ignore' })
+    const seen = await until(() => readJ(path.join(d, 'governor.json'))?.activity?.gates > 0, 6000)
+    assert.ok(seen, 'the governor saw the gate as live work')
+    const code = await new Promise(r => g.on('exit', r))
+    assert.equal(code, 7)
+    const gone = await until(() => readJ(path.join(d, 'governor.json'))?.activity?.gates === 0, 4000)
+    assert.ok(gone, 'the gate lease is gone after exit')
+  } finally { gov.kill('SIGTERM') }
+})
+
+test('the gate waits while the machine is held, and starts once it is ok', async () => {
+  const d = tmp(), l = tmp()
+  // a fake published state (no daemon): hold now, ok in 2.5 s
+  const st = level => fs.writeFileSync(path.join(d, 'governor.json'), JSON.stringify({ t: Date.now(), level, reasons: level === 'ok' ? [] : ['hold: test'], metrics: {}, activity: {} }))
+  st('hold')
+  const keep = setInterval(() => st(Date.now() - t0 > 2500 ? 'ok' : 'hold'), 200)
+  const t0 = Date.now()
+  const out = execFileSync(process.execPath, [GATE, '--', 'node', '-e', 'console.log(Date.now())'], { env: envFor(d, l), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  clearInterval(keep)
+  const started = +out.trim()
+  assert.ok(started - t0 >= 2400, `waited for ok: ${started - t0} ms`)
+})
+
+test('the daemon exits after its idle time and leaves the fans automatic', async () => {
+  const d = tmp(), l = tmp()
+  const p = spawn(process.execPath, [GOV, 'daemon'], { env: envFor(d, l, { UC_GOVERNOR_IDLE_MS: '2000' }), stdio: 'ignore' })
+  const code = await Promise.race([new Promise(r => p.on('exit', c => r(c))), sleep(10000).then(() => 'timeout')])
+  assert.notEqual(code, 'timeout', 'exited on its own')
+  assert.equal(readJ(path.join(d, 'fan-request.json')).frac, null)
+})
+
+test('ucsmc: real sensors without root, dry-run fan writes, real writes refused without root', () => {
+  const BIN = path.join(HERE, '..', 'native', 'ucsmc')
+  const s = JSON.parse(execFileSync(BIN, ['sense'], { encoding: 'utf8' }))
+  assert.ok(s.cpuMaxC > 0 && s.fans.length > 0 && s.fans.every(f => f.max > f.min))
+  const dry = execFileSync(BIN, ['--dry', 'fan', 'frac', '0.5'], { encoding: 'utf8' }).trim().split('\n').map(x => JSON.parse(x))
+  const tg = dry.filter(w => /^F\dTg$/.test(w.write))
+  assert.equal(tg.length, s.fans.length, 'one target write per fan')
+  const f0 = Buffer.from(tg[0].bytes).readFloatLE(0), want = s.fans[0].min + (s.fans[0].max - s.fans[0].min) * 0.5
+  assert.ok(Math.abs(f0 - want) < 1, `fan 0 target ${f0} = midpoint ${want}`)
+  if (process.getuid() !== 0) assert.throws(() => execFileSync(BIN, ['fan', 'frac', '0.5'], { stdio: 'ignore' }), 'refused without root')
+})

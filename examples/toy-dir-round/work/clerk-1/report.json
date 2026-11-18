@@ -1,0 +1,9 @@
+{
+  "summary": "Merged charm-add and charm-greet into the target. One README.md conflict (both appended a line after line 2); resolved by keeping both lines. 11/11 tests pass.",
+  "merged": ["charm-add (add)", "charm-greet (greet, assets/dot.png, README line)"],
+  "conflicts": ["README.md: charm-greet's hunk was rejected because charm-add had already appended '- add(a, b)' after line 2. Resolved by keeping both lines in patch order: '- add(a, b)' then '- greet(name)'. Deleted the .rej file; no .orig files."],
+  "evidence": ["node --test --test-reporter=tap test*.mjs + charm-add/test-add.mjs + charm-greet/b/test-greet.mjs, APP_DIR=target: tests 11, pass 11, fail 0, about 110 ms"],
+  "snapshot_src": "/Users/mick/dev/web/uc-optimizer/examples/toy-dir-round/work/clerk-1/src",
+  "snapshot_built": "/Users/mick/dev/web/uc-optimizer/examples/toy-dir-round/work/clerk-1/built",
+  "open_issues": []
+}

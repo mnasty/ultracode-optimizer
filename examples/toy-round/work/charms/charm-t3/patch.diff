@@ -1,0 +1,9 @@
+--- /Users/mick/dev/web/uc-optimizer/examples/toy-round/base.html	2026-10-30 21:59:48
++++ /Users/mick/dev/web/uc-optimizer/examples/toy-round/work/charms/charm-t3/src.html	2026-10-30 22:01:39
+@@ -13,5 +13,6 @@
+ <p id="count"></p>
+ </main>
+ <script>
++document.getElementById('count').textContent = document.querySelectorAll('#list li').length + ' items';
+ document.getElementById('go').addEventListener('click', () => { document.getElementById('count').textContent = 'started'; });
+ </script></body></html>

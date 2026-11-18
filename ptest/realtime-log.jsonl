@@ -1,0 +1,13 @@
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-10-31T04:42:09.834Z","wallMs":147,"ok":true,"value":147,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-10-31T04:49:46.054Z","wallMs":121,"ok":true,"value":120,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-10-31T04:55:43.931Z","wallMs":122,"ok":true,"value":121,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-10-31T05:50:49.079Z","wallMs":120,"ok":true,"value":120,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-11-01T19:16:50.535Z","wallMs":121,"ok":true,"value":121,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-11-02T07:14:28.548Z","wallMs":134,"ok":true,"value":133,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-11-02T08:15:39.073Z","wallMs":122,"ok":true,"value":121,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-11-02T09:29:46.845Z","wallMs":123,"ok":true,"value":122,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-11-02T09:43:26.062Z","wallMs":129,"ok":true,"value":122,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-11-02T09:51:58.944Z","wallMs":123,"ok":true,"value":123,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-11-02T10:04:15.693Z","wallMs":123,"ok":true,"value":122,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-11-11T03:06:02.623Z","wallMs":127,"ok":true,"value":125,"error":null}
+{"name":"selftest/sleep-120","claim":"a 120ms sleep takes >= 120ms","startedAt":"2026-11-11T03:29:17.754Z","wallMs":121,"ok":true,"value":120,"error":null}

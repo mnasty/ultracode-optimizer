@@ -1,0 +1,11 @@
+--- /Users/mick/dev/web/uc-optimizer/examples/toy-round/work/clerk-1/src.html	2026-10-30 22:02:57
++++ /Users/mick/dev/web/uc-optimizer/examples/toy-round/work/repair-1/charm-fix0/src.html	2026-10-30 22:04:43
+@@ -2,7 +2,7 @@
+ <style>
+ body{margin:0;font:16px/1.5 Georgia,serif;background:#1d1f3a;color:#f2ead3}
+ main{max-width:640px;margin:0 auto;padding:24px 16px}
+-h1{font-size:40px;margin:0 0 12px;color:#c9a45c}
++h1{font-size:40px;margin:0 0 12px;color:#c9a45c;text-wrap:balance}
+ .cta{display:inline-block;min-height:44px;min-width:44px;padding:6px 10px;border:1px solid #f2ead3;background:none;color:#f2ead3;font:inherit}
+ ul{padding-left:20px}
+ </style></head><body><main>

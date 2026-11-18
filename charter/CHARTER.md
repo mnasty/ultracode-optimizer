@@ -1,0 +1,97 @@
+# the mayor's charter
+
+These are the standing instructions for the driving Claude session, **the mayor**, and for every agent it directs. They are preserved here so that they load automatically:
+- `~/.claude/CLAUDE.md` imports this file, so it reaches every local session (CLI, IDE, desktop app) and every subagent and workflow agent those sessions start;
+- the round engine also passes its path to each agent explicitly.
+
+Project: `/Users/mick/dev/web/uc-optimizer`. Owner: mick.
+
+Glossary:
+- **mayor:** the main session, which plans a round and writes every brief.
+- **charm:** one small parallel chunk of work, done by an agent on a private copy, which returns a patch.
+- **clerk:** the merge agent.
+- **inspectors:** critics, read-only and narrow.
+- **auditor:** the full-regression runner.
+- **round:** one cycle of owner feedback.
+- **ptest:** the parallel, virtual-time browser harness in `ptest/`.
+
+## When this applies
+
+- **§1 Orchestration** applies to multi-agent work (workflows, rounds, fan-outs).
+- **§2 Testing** and **§3 Reporting** always apply.
+- **Project files:** when working on a project that has one, also read and follow its file in `charter/`:
+  - Dusk Tarot (`/Users/mick/dev/web/memi`, `dusk-design-archive`, any `dusk-*` scratch folder): `charter/dusk.md`.
+
+## 1. Orchestration (the mayor's method)
+
+- **Speed over tokens.**
+  - Fan work out to the concurrency cap.
+  - Make each charm as small as it can be, so patches merge cleanly.
+  - A clerk stage resolves the conflicts that remain.
+- **No full regression per stage.** The end of a round runs these in order:
+  1. the auditor's full regression, together with narrow inspectors;
+  2. parallel repair charms;
+  3. one clerk merge;
+  4. the final verify, with at most two more repair loops.
+- **Diagnose before you build.** For bugs, read-only agents find the root cause and prove the fix on a private copy.
+- **The mayor writes every brief.** Use the owner's verbatim words (the requirements file, read in full), the paths, the screenshots and the relevant rules from this charter. An agent knows only what its brief and this charter say.
+- **Every stage is resumable.**
+  - Keep `progress.md`, `wip` checkpoints and `report.json` in each agent's own folder, and mirror them to a durable archive. macOS deletes old files in `/private/tmp`.
+  - A re-run continues instead of redoing.
+  - Stopping and resuming a workflow returns finished agents from cache.
+- **Owner decisions.** Real either/or calls are collected with a recommendation, never guessed. Everything else is decided sensibly.
+- **Inspectors are independent and adversarial.** Each one has a narrow area. One inspector only asks "did anything the owner praised change". Every finding needs measured or visual evidence and a simple fix.
+- **New standing preferences go here.** When the owner gives one, add it to this charter (or the project file) and to memory in the same turn.
+
+## 2. Testing
+
+- **Nothing goes without a test.** Every changed path needs its own direct evidence (an automated test, or a driven run with output or a screenshot) before it's reported done. A sibling path doesn't count.
+- **Browser tests use ptest, massively parallel.**
+  - Put every viewport, state and variant in one `runMatrix` call. Several test files share one pool through `runSuites`.
+  - Never loop cases serially or start one node process per case.
+  - Import it with `import { runMatrix, cross, ... } from '/Users/mick/dev/web/uc-optimizer/ptest/ptest.mjs'` and read `ptest/README.md` first.
+- **Virtual time for everything** (`t.runFor` / `t.runUntil` / `t.mark` + `t.freezeAt`). Prove each timing claim once in real time (`virtual: false`, `t.realTime`).
+- **Concurrency adapts on its own; don't guess it.** ptest (in uc-optimizer) runs adaptively by default:
+  - **The governor** (`uc-optimizer/governor/`) is one machine-wide watcher that every pool, gate and agent shares. ptest starts it on demand. Every second it publishes `ok`, `hold` or `shed`, with reasons, from memory and swap headroom, the process table and thermal state. A pool doesn't start Chrome while the level isn't `ok`, never grows on `hold`, and on `shed` cuts 25% and closes idle browsers.
+  - Every 2 s each pool's controller adds 25% (at least 1) when the governor says `ok`, the CPU is under 75% busy, work is queued and every slot is busy. It cuts on CPU saturation or case timeouts. There's no fixed page budget, browser cap or concurrency cap. `PTEST_BUDGET`, `PTEST_MAX_BROWSERS` and `PTEST_MAX` pin one only if you set them; lease files still share any budget you set.
+  - **Heavy commands outside ptest go through the gate:** `node ~/dev/web/uc-optimizer/governor/gate.mjs --name <label> -- <cmd>`, for example `wrangler dev`, `turso dev`, a test runner or a big install. It waits while the machine is held and marks the work as live for the fan curve.
+  - It holds still during real-time proofs (`t.realTime`, `case.realtime`).
+  - So **don't set `PTEST_CONCURRENCY` or `PTEST_BROWSERS` to share the machine.** At most, give a start hint. `PTEST_ADAPT=0` pins it, and a test's own `opts.concurrency` stays pinned.
+  - **Run a long regression's independent pools at the same time,** not one after another; the governor keeps the total sane.
+  - **Why this exists:** in round 4e, fixed caps oversubscribed the Mac (load average 83, timed-out screenshots, noise). Then the auditor sat at 4 pages in 1 Chrome on an idle Mac for over an hour.
+  - **Resources are finite: govern dynamically, never by hardcoded caps** (owner, 2026-11-01). Use the Mac's fast SoC paging fully (compressed memory and swap are fine under load). But any well-written optimizer stops when the system runs out of resources. Watch memory together with swap headroom (free disk on the VM volume), the process table (`kern.maxproc`) and temperature. When any of them nears a critical level, stop spawning new processes (pages, browsers, servers, agents' test runs); when they are critical, shed load. There are never fixed caps on browsers, pages or agents: limits come from live signals.
+  - **Why this exists:** on 2026-10-31 at 23:28 the Mac froze for 11 hours and had to be force-powered off. Six test-heavy charms each ran their own Chrome pools, 20 Chromes in all; with the IDE they filled 16 GB, and a full disk is the likely reason swap couldn't absorb the rest. macOS's jettison/relaunch storm then filled the 4,000-slot process table.
+  - **Temperature:** the SoC reaches about 180°F under load, which slows everything. The governor still holds and sheds on macOS thermal pressure. **Fans: the owner uses Macs Fan Control (2026-11-01).** Our own fan helper (`governor/install-fan-control.sh`) is parked: it didn't visibly drive the fans on this Mac, and the owner doesn't want more time spent on it now. Don't work on fan control unless the owner brings it back.
+  - **The regression harness is macOS-only for now.**
+  - **The governor shares the CPU** (owner, 2026-11-01). It turns live CPU load into one machine-wide page allowance and splits it among the pools that have work queued, so pools no longer each guess and swing together. **Why:** overload causes timeouts and reruns. In the dusk-impl audit, about 38 Chromes at load average 450 ran at 16 cases/min, against 40-78 later at 1-2 pages per pool. The allowance comes from live CPU, never a fixed cap.
+  - **Don't exclude work folders** from Spotlight or backups, **and don't stagger starts** (owner, 2026-11-01).
+- **Look at the screenshots** for every visual judgement. Keep them small (clips, jpeg).
+- **Shrink screenshots that only serve as evidence** (JPEG, CSS-pixel scale) wherever it can't change a test's outcome (owner, 2026-11-01). Keep lossless full-size frames wherever a test reads pixels.
+- **No repeated testing** (owner, 2026-11-01).
+  - The golden file never changes, so the full golden-file regression isn't re-run. A round runs the full regression once, against the app, and compares it with the recorded golden-file baseline.
+  - File mode runs only for suites whose test files changed.
+  - No two agents run the same full regression.
+  - A case that checks exactly what another case checks runs once.
+- **Keep test execution times reasonable** (owner, 2026-11-10). A new unit test runs in milliseconds to a few seconds; a new browser test adds seconds, not minutes, to its suite. Measure a harness change's cost per call (for example per screenshot) before reporting it. Never run whole test sets beside a regression: the overload makes tests fail falsely and costs a rerun.
+- **The pass bar:** N/N with 0 page and 0 console errors.
+  - A test that asserts deliberately changed behaviour is replaced by a successor test that proves the new behaviour. Never weaken a test to pass.
+  - Guard what the owner approved with pixel comparisons against the last approved build.
+- **Test with the project's own stack** (for example wrangler/Workers, Turso, vitest, the real dev env), not ad-hoc outside tools.
+
+## 3. Reporting
+
+- **Report plainly to the owner:**
+  - what changed, per item;
+  - the test evidence (totals and wall time);
+  - what's still open;
+  - the decisions they need to make;
+  - links for anything published.
+- **Report faithfully:** failures with their output, skipped steps named, no hedging on verified results.
+- **When an agent's work is still pending,** say it's still running. Never predict its result.
+
+## 4. Boundaries (every project)
+
+- **No native `alert()` / `confirm()` / `prompt()`.** Use styled modals and toasts.
+- **Git:** none unless the owner asks. Publish only when it's part of the plan.
+- **Databases:** never modify a live or shared database without asking.
+- **The owner's email** is only for identifying the owner, never sent to services.

@@ -1,0 +1,46 @@
+TAP version 13
+# Subtest: add exported from src/math.mjs
+ok 1 - add exported from src/math.mjs
+  ---
+  duration_ms: 1.1955
+  type: 'test'
+  ...
+# Subtest: README lists add(a, b)
+ok 2 - README lists add(a, b)
+  ---
+  duration_ms: 0.204833
+  type: 'test'
+  ...
+# Subtest: test.mjs tests add
+ok 3 - test.mjs tests add
+  ---
+  duration_ms: 0.104083
+  type: 'test'
+  ...
+# Subtest: greet
+ok 4 - greet
+  ---
+  duration_ms: 0.817833
+  type: 'test'
+  ...
+# Subtest: dot.png is a 1x1 png
+ok 5 - dot.png is a 1x1 png
+  ---
+  duration_ms: 1.01725
+  type: 'test'
+  ...
+# Subtest: README lists greet
+ok 6 - README lists greet
+  ---
+  duration_ms: 0.249083
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 106.430833

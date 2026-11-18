@@ -1,0 +1,9 @@
+{
+  "charter_ack": "charm: one small parallel chunk of work, done by an agent on a private copy, which returns a patch.",
+  "summary": "T2: added min-height:44px;min-width:44px to the .cta CSS rule only (one-line change). Button is now 54.6x44 px at all 11 viewports (was 54.6x38); padding, border, colors, font and text unchanged; text stays centered. Side effect: the button is 6 px taller, so the list below starts 6 px lower. Test t2-test.mjs: 22/22 cases ok (11 viewports x new/base), 0 page errors, 6.9 s wall at PTEST_CONCURRENCY=2. Screenshots in out/t2 checked by eye: base and new look the same apart from the height.",
+  "patch": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/charms/charm-t2/patch.diff",
+  "fixed": ["t2"],
+  "not_fixed": [],
+  "regions": [".cta CSS rule (line 6 of base.html)"],
+  "tests": ["/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/charms/charm-t2/t2-test.mjs"]
+}

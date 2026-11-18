@@ -1,0 +1,47 @@
+TAP version 13
+# Subtest: greet
+ok 1 - greet
+  ---
+  duration_ms: 0.834375
+  type: 'test'
+  ...
+# Subtest: dot.png is a 1x1 png
+ok 2 - dot.png is a 1x1 png
+  ---
+  duration_ms: 1.18475
+  type: 'test'
+  ...
+# Subtest: README lists greet
+ok 3 - README lists greet
+  ---
+  duration_ms: 0.2255
+  type: 'test'
+  ...
+# Subtest: double
+ok 4 - double
+  ---
+  duration_ms: 0.787958
+  type: 'test'
+  ...
+# Subtest: add
+ok 5 - add
+  ---
+  duration_ms: 0.069791
+  type: 'test'
+  ...
+# Subtest: README lists add
+ok 6 - README lists add
+  ---
+  duration_ms: 0.236917
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 111.703917
+rc=0

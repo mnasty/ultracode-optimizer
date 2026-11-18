@@ -1,0 +1,13 @@
+{
+  "summary": "Clerk repair-1: applied the single repair patch (charm-fix0, LOOK-1: h1 text-wrap:balance) cleanly onto clerk-1 src; built; targeted test passed 2/2 with 0 page and 0 console errors.",
+  "merged": ["LOOK-1 (charm-fix0): h1 rule gains text-wrap:balance; patch applied cleanly, no conflicts"],
+  "conflicts": ["none: only one patch, applied with patch(1) without fuzz or offset"],
+  "evidence": [
+    "fix0-test.mjs on merged built.html (one ptest runMatrix pool, virtual time): 2/2 passed, 0 page errors, 0 console errors, ~2.1 s wall",
+    "360x640: text-wrap=balance, lines ['welcome','to the toy'] (no lone last word), h-scroll 0; screenshot work/repair-1-clerk/test/out/360x640--h1.png viewed, looks right",
+    "1440x900: text-wrap=balance, one line 'welcome to the toy', h-scroll 0"
+  ],
+  "open_issues": ["full regression not run in this step by design (auditor runs it)"],
+  "snapshot_src": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/repair-1-clerk/src.html",
+  "snapshot_built": "/Users/mick/dev/web/uc-optimizer/examples/toy-round/work/repair-1-clerk/built.html"
+}

@@ -1,0 +1,11 @@
+--- /Users/mick/dev/web/uc-optimizer/examples/toy-round/base.html	2026-10-30 21:59:48
++++ /Users/mick/dev/web/uc-optimizer/examples/toy-round/work/charms/charm-t2/src.html	2026-10-30 22:01:32
+@@ -3,7 +3,7 @@
+ body{margin:0;font:16px/1.5 Georgia,serif;background:#1d1f3a;color:#f2ead3}
+ main{max-width:640px;margin:0 auto;padding:24px 16px}
+ h1{font-size:40px;margin:0 0 12px;color:#c9a45c}
+-.cta{display:inline-block;padding:6px 10px;border:1px solid #f2ead3;background:none;color:#f2ead3;font:inherit}
++.cta{display:inline-block;min-height:44px;min-width:44px;padding:6px 10px;border:1px solid #f2ead3;background:none;color:#f2ead3;font:inherit}
+ ul{padding-left:20px}
+ </style></head><body><main>
+ <h1 id="title">Welcome To The Toy</h1>

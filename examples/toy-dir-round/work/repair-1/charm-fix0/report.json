@@ -1,0 +1,11 @@
+{
+  "charter_ack": "**charm:** one small parallel chunk of work, done by an agent on a private copy, which returns a patch.",
+  "summary": "README-1: replaced the two feature lines in README.md with one line, '- features: add(a, b), greet(name)'. The README assertion in test-greet.mjs is now anchored on that exact line. README-2: added test('README lists add') to test.mjs, which matches the features line containing add(a, b). Ran the app suite on b with APP_DIR=b: 6/6 pass, 0 fail (it was 5 tests before; the new one is the README add check). The patch applies with git apply -p2 --check from work/target. One open item: charm-add's external test charms/charm-add/test-add.mjs still has a line-anchored /^- add\\(a, b\\)$/m check. Run against b it gives 2/3 (that check fails), as expected after the deliberate README change. That file is outside this charm's folder, so I did not edit it. The new test.mjs 'README lists add' replaces it.",
+  "patch": "/Users/mick/dev/web/uc-optimizer/examples/toy-dir-round/work/repair-1/charm-fix0/patch.diff",
+  "fixed": ["README-1", "README-2"],
+  "not_fixed": [],
+  "regions": ["README.md (feature lines, now one line)", "test-greet.mjs: test 'README lists greet' regex", "test.mjs: import readFileSync + new test 'README lists add'"],
+  "tests": ["/Users/mick/dev/web/uc-optimizer/examples/toy-dir-round/work/repair-1/charm-fix0/b/test.mjs", "/Users/mick/dev/web/uc-optimizer/examples/toy-dir-round/work/repair-1/charm-fix0/b/test-greet.mjs"],
+  "owner_decisions": ["README-1 takes 'a README line listing both features' literally: one line, '- features: add(a, b), greet(name)'. If the owner prefers one line per feature, drop the README-1 hunks (README.md and test-greet.mjs) and keep only the README-2 test, with its regex loosened to /add\\(a, b\\)/."],
+  "owner_answers": []
+}

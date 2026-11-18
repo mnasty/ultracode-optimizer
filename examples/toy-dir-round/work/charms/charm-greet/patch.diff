@@ -1,0 +1,43 @@
+diff --git a/a/README.md b/b/README.md
+index 2f38a05..4c4b116 100644
+--- a/a/README.md
++++ b/b/README.md
+@@ -1,2 +1,3 @@
+ # toy dir app
+ A tiny app for proving the engine's dir mode.
++- greet(name)
+diff --git a/b/assets/dot.png b/b/assets/dot.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..909c66db1740b7c1b41eb4db6c414a7ab5bb6a23
+GIT binary patch
+literal 68
+zcmeAS@N?(olHy`uVBq!ia0vp^j3CUx0wlM}@Gt=>Zci7-kcwN$DG5Lh8v~O;;{|;n
+Oi^0>?&t;ucLK6U5DhwL{
+
+literal 0
+HcmV?d00001
+
+diff --git a/b/src/greet.mjs b/b/src/greet.mjs
+new file mode 100644
+index 0000000..e47b38d
+--- /dev/null
++++ b/b/src/greet.mjs
+@@ -0,0 +1 @@
++export const greet = (name) => 'hello, ' + name;
+diff --git a/b/test-greet.mjs b/b/test-greet.mjs
+new file mode 100644
+index 0000000..abf3b21
+--- /dev/null
++++ b/b/test-greet.mjs
+@@ -0,0 +1,11 @@
++import { test } from 'node:test'; import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs'; import { join, dirname } from 'node:path'; import { fileURLToPath, pathToFileURL } from 'node:url';
++const root = process.env.APP_DIR || dirname(fileURLToPath(import.meta.url));
++const { greet } = await import(pathToFileURL(join(root, 'src/greet.mjs')).href);
++test('greet', () => assert.equal(greet('mick'), 'hello, mick'));
++test('dot.png is a 1x1 png', () => {
++  const b = readFileSync(join(root, 'assets/dot.png'));
++  assert.deepEqual([...b.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
++  assert.equal(b.readUInt32BE(16), 1); assert.equal(b.readUInt32BE(20), 1);
++});
++test('README lists greet', () => assert.match(readFileSync(join(root, 'README.md'), 'utf8'), /^- greet\(name\)$/m));

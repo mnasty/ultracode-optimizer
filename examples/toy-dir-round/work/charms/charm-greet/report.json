@@ -1,0 +1,9 @@
+{
+  "charter_ack": "charm: one small parallel chunk of work, done by an agent on a private copy, which returns a patch.",
+  "summary": "Added src/greet.mjs (greet(name) -> 'hello, ' + name), test-greet.mjs (reads APP_DIR; checks greet, dot.png is a valid 1x1 PNG, README line), assets/dot.png (68-byte 1x1 PNG decoded from the given base64 with node), and README line '- greet(name)'. Tests on b: 4/4 pass (tap, ~0.1s). The patch applies with git apply -p2 to a fresh base copy and gives 4/4 there too. Incident: a first attempt under zsh failed to cd and briefly wrote the same 4 files into /Users/mick/dev/web/memi; I removed them and restored README.md, so memi git status is back to only '?? .claude/'.",
+  "patch": "/Users/mick/dev/web/uc-optimizer/examples/toy-dir-round/work/charms/charm-greet/patch.diff",
+  "fixed": ["greet"],
+  "not_fixed": [],
+  "regions": ["src/greet.mjs (new: greet)", "test-greet.mjs (new)", "assets/dot.png (new, binary)", "README.md (appended line '- greet(name)' after line 2)"],
+  "tests": ["/Users/mick/dev/web/uc-optimizer/examples/toy-dir-round/work/charms/charm-greet/b/test-greet.mjs"]
+}

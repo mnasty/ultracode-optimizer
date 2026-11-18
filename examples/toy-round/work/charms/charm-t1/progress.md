@@ -1,0 +1,2 @@
+- started; src.html copied from base
+- done: patch.diff + report.json written; t1-test 2/2

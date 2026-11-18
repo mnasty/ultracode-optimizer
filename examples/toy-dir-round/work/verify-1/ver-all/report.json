@@ -1,0 +1,14 @@
+{
+  "charter_ack": "charm: one small parallel chunk of work, done by an agent on a private copy, which returns a patch.",
+  "summary": "All requirements are met in the snapshot (repair-1-clerk/src). Tests: 6/6 pass, 0 fail (tap, ~100 ms, wall 0.19 s). dot.png is byte-identical to the given base64 and is a valid 1x1 PNG. README has '- features: add(a, b), greet(name)'. The target dir is identical to the snapshot (diff -r).",
+  "ready_for_owner": true,
+  "per_item": [
+    {"id": "add", "status": "resolved", "evidence": "src/math.mjs exports add; add(2,3)=5 and add(0.5,0.25)=0.75 when driven directly; test.mjs 'add' passes."},
+    {"id": "greet", "status": "resolved", "evidence": "src/greet.mjs: greet('name') returns \"hello, name\"; test-greet.mjs 'greet' passes; negative control: test-greet against base fails 0/1."},
+    {"id": "dot.png", "status": "resolved", "evidence": "68 bytes, Buffer.equals(base64 decode) is true; IHDR/IDAT/IEND CRCs check out; IHDR is 1x1; file: 'PNG image data, 1 x 1, 8-bit gray+alpha'; sips: 1x1."},
+    {"id": "README", "status": "resolved", "evidence": "README.md line 3 is '- features: add(a, b), greet(name)'; the tests 'README lists add' and 'README lists greet' pass."},
+    {"id": "target==snapshot", "status": "resolved", "evidence": "diff -r repair-1-clerk/src target: no differences; diff -r repair-1-clerk/built target-built: no differences."}
+  ],
+  "new_problems": [],
+  "owner_decisions": []
+}

@@ -1,0 +1,10 @@
+{
+  "charter_ack": "charm: one small parallel chunk of work, done by an agent on a private copy, which returns a patch.",
+  "summary": "Reset target to clerk-1/src, applied charm-fix0 patch cleanly (README.md, test-greet.mjs, test.mjs; no .rej). README now has one line '- features: add(a, b), greet(name)'. Built (copied index.html). Unit tests 6/6 pass, 0 fail.",
+  "merged": ["charm-fix0: README-1, README-2 (README feature line merged to one line; test-greet regex updated; test.mjs new test 'README lists add')"],
+  "conflicts": ["none: patch applied cleanly, no .rej files"],
+  "evidence": ["node --test --test-reporter=tap test*.mjs in merged target: tests 6, pass 6, fail 0, duration ~105 ms (wall 0.2 s)", "target test.mjs and test-greet.mjs identical to charm-fix0/b copies"],
+  "open_issues": [],
+  "snapshot_src": "/Users/mick/dev/web/uc-optimizer/examples/toy-dir-round/work/repair-1-clerk/src",
+  "snapshot_built": "/Users/mick/dev/web/uc-optimizer/examples/toy-dir-round/work/repair-1-clerk/built"
+}

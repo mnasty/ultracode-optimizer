@@ -1,0 +1,22 @@
+<!doctype html><meta charset=utf-8><title>timers</title>
+<style>
+#tr{width:10px;height:10px;background:red;transition:transform 300ms linear}
+#tr.go{transform:translateX(100px)}
+@keyframes slide{from{transform:translateX(0)}to{transform:translateX(100px)}}
+#css.go{animation:slide 1000ms linear forwards}
+#loop{animation:slide 2000ms linear infinite}
+</style>
+<div id="tr"></div><div id="css"></div><div id="loop"></div><div id="wa"></div><div id="clock"></div>
+<script>
+const R = window.R = { iv: 0, chain: [], raf: 0, rafT: [], t0: performance.now(), d0: Date.now() };
+setInterval(() => R.iv++, 100);
+(function c(n) { R.chain.push(Math.round(performance.now() - R.t0)); if (n < 5) setTimeout(() => c(n + 1), 250); })(0);
+(function f(t) { R.raf++; R.rafT.push(t); requestAnimationFrame(f); })(0);
+const a = document.getElementById('wa').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1000 });
+a.finished.then(() => R.waapiDone = Math.round(performance.now() - R.t0));
+setTimeout(() => { const e = document.getElementById('tr'); void e.offsetWidth; e.classList.add('go'); R.trStart = Math.round(performance.now() - R.t0); }, 500);
+document.getElementById('tr').addEventListener('transitionend', () => R.trEnd = Math.round(performance.now() - R.t0));
+setTimeout(() => { const e = document.getElementById('css'); e.classList.add('go'); void e.offsetWidth; R.cssStart = Math.round(performance.now() - R.t0); }, 200);
+document.getElementById('css').addEventListener('animationend', () => R.cssEnd = Math.round(performance.now() - R.t0));
+setInterval(() => document.getElementById('clock').textContent = new Date().toISOString(), 60000);
+</script>

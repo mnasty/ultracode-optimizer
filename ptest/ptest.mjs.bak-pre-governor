@@ -1,0 +1,1208 @@
+// ptest: parallel Playwright runner + virtual time + shared visual checks for the dusk prototype.
+// No deps beyond playwright-core. Import it:
+//   import { runMatrix, vp, DUSK_URL } from '<ptest>/ptest.mjs';
+// CLI: node ptest.mjs calibrate [--force] [--quick] | node ptest.mjs bench [a|b|c|d ...] | node ptest.mjs info
+import { chromium } from 'playwright-core'; // uc-optimizer/node_modules (npm install in the uc-optimizer folder)
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import zlib from 'node:zlib';
+import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+export { chromium };
+export const PTEST_DIR = path.dirname(fileURLToPath(import.meta.url));
+export const CAL_FILE = path.join(PTEST_DIR, '.calibration.json');
+export const REALTIME_LOG = path.join(PTEST_DIR, 'realtime-log.jsonl');
+export const OUT_DIR = path.join(PTEST_DIR, 'out');
+export const DUSK_FILE = process.env.PTEST_DUSK_FILE || '/private/tmp/claude-501/-Users-mick-dev-web-memi/e4432b45-0260-4380-a5d7-24825da27615/scratchpad/dusk-design/direction-dusk-v4.html'; // the dusk prototype build; override per round
+export const DUSK_URL = pathToFileURL(DUSK_FILE).href;
+const FONT_CACHE_DIR = path.join(PTEST_DIR, '.netcache');
+const CAL_TTL_H = 24;
+
+/* ======================================================================================================
+   small utilities
+   ====================================================================================================== */
+const now = () => performance.now();
+export const sleepReal = ms => new Promise(r => setTimeout(r, ms));
+export const slug = s => String(s).toLowerCase().replace(/[^a-z0-9.@+-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120) || 'x';
+/** '390x844' or [390,844] or {width,height} -> {width,height} */
+export function vp(v) {
+  if (!v) return { width: 390, height: 844 };
+  if (typeof v === 'string') { const [w, h] = v.split('x').map(Number); return { width: w, height: h }; }
+  if (Array.isArray(v)) return { width: v[0], height: v[1] };
+  return { width: v.width, height: v.height };
+}
+/** the 11 viewports the energy audits use */
+export const VIEWPORTS_11 = ['360x640', '375x667', '390x844', '430x932', '768x1024', '1024x768', '1280x800', '1440x900', '1920x1080', '2560x1440', '3440x1440'];
+/** cartesian product: cross({vp:[...]}, {state:[...]}) -> [{vp, state}, ...] */
+export function cross(...axes) {
+  let out = [{}];
+  for (const ax of axes) for (const [k, vals] of Object.entries(ax)) out = out.flatMap(o => vals.map(v => ({ ...o, [k]: v })));
+  return out;
+}
+/** stable, readable id for a case: name, else viewport + every scalar field */
+export function caseId(c) {
+  if (c.name) return slug(c.name);
+  const v = vp(c.vp || c.viewport);
+  const parts = [`${v.width}x${v.height}`];
+  if (c.dpr && c.dpr !== 1) parts.push(`dpr${c.dpr}`);
+  if (c.reducedMotion === 'reduce' || c.rm) parts.push('rm');
+  if (c.colorScheme) parts.push(c.colorScheme);
+  for (const [k, val] of Object.entries(c)) {
+    if (['name', 'vp', 'viewport', 'dpr', 'touch', 'hasTouch', 'isMobile', 'reducedMotion', 'rm', 'colorScheme', 'virtual', 'timeout', 'url', 'dir', '__suite'].includes(k)) continue;
+    if (val == null || typeof val === 'object' || typeof val === 'function') continue;
+    parts.push(typeof val === 'boolean' ? (val ? k : 'no' + k) : k === 'seed' ? `seed${val}` : `${val}`);
+  }
+  return slug(parts.join('-'));
+}
+const fmtMs = ms => ms >= 10000 ? (ms / 1000).toFixed(1) + 's' : ms >= 1000 ? (ms / 1000).toFixed(2) + 's' : Math.round(ms) + 'ms';
+const pad = (s, n) => { s = String(s); return s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length); };
+const median = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const quantile = (a, q) => { if (!a.length) return NaN; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.max(0, Math.round(q * (s.length - 1))))]; };
+
+/* ======================================================================================================
+   system metrics: memory pressure + swap activity, recorded next to every throughput point
+   ====================================================================================================== */
+const sh = (cmd, args) => { try { return execFileSync(cmd, args, { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return ''; } };
+export function sysSnapshot() {
+  const vm = sh('vm_stat', []);
+  const pageSize = +(/page size of (\d+)/.exec(vm) || [0, 16384])[1];
+  const num = k => { const m = new RegExp(k + ':\\s+(\\d+)').exec(vm); return m ? +m[1] : null; };
+  const sw = sh('sysctl', ['-n', 'vm.swapusage']);
+  const mb = k => { const m = new RegExp(k + ' = ([\\d.]+)M').exec(sw); return m ? +m[1] : null; };
+  const mp = sh('memory_pressure', ['-Q']);
+  const free = /free percentage: (\d+)%/.exec(mp);
+  const lvl = sh('sysctl', ['-n', 'kern.memorystatus_vm_pressure_level']).trim();
+  const cpu = os.cpus().reduce((a, c) => { const t = c.times; a.idle += t.idle; a.total += t.user + t.nice + t.sys + t.idle + t.irq; return a; }, { idle: 0, total: 0 });
+  return {
+    t: Date.now(), load1: +os.loadavg()[0].toFixed(2), cpuIdle: cpu.idle, cpuTotal: cpu.total, freeMemPct: free ? +free[1] : null,
+    pressureLevel: lvl ? ({ 1: 'normal', 2: 'warn', 4: 'critical' }[lvl] || lvl) : null,
+    pageouts: num('Pageouts'), swapouts: num('Swapouts'), swapins: num('Swapins'), pageSize,
+    swapUsedMB: mb('used'), swapTotalMB: mb('total'),
+  };
+}
+export function sysDelta(a, b) {
+  return {
+    load1: b.load1, cpuBusyPct: b.cpuTotal > a.cpuTotal ? Math.round(100 * (1 - (b.cpuIdle - a.cpuIdle) / (b.cpuTotal - a.cpuTotal))) : null, freeMemPct: b.freeMemPct, pressureLevel: b.pressureLevel, swapUsedMB: b.swapUsedMB,
+    swapUsedDeltaMB: a.swapUsedMB != null && b.swapUsedMB != null ? +(b.swapUsedMB - a.swapUsedMB).toFixed(1) : null,
+    pageoutsDelta: a.pageouts != null ? b.pageouts - a.pageouts : null,
+    swapoutsDelta: a.swapouts != null ? b.swapouts - a.swapouts : null,
+    swapinsDelta: a.swapins != null ? b.swapins - a.swapins : null,
+  };
+}
+
+/* ======================================================================================================
+   network cache: Google Fonts css/woff2 served from memory/disk to every context (each BrowserContext
+   otherwise refetches them; that is network wait per case, and a flake source when many run at once)
+   ====================================================================================================== */
+const memNet = new Map(); const netInflight = new Map();
+const NET_RE = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//;
+async function netCached(route) {
+  const url = route.request().url();
+  const key = crypto.createHash('sha1').update(url).digest('hex');
+  try {
+    let hit = memNet.get(key);
+    if (!hit) {
+      const f = path.join(FONT_CACHE_DIR, key);
+      if (fs.existsSync(f + '.json')) { hit = { ...JSON.parse(fs.readFileSync(f + '.json', 'utf8')), body: fs.readFileSync(f + '.bin') }; memNet.set(key, hit); }
+    }
+    if (!hit) {
+      if (!netInflight.has(key)) netInflight.set(key, (async () => {
+        const resp = await route.fetch(); const body = await resp.body();
+        const headers = { ...resp.headers() }; delete headers['content-encoding']; delete headers['content-length'];
+        const rec = { status: resp.status(), headers, body };
+        if (resp.status() === 200) { fs.mkdirSync(FONT_CACHE_DIR, { recursive: true }); fs.writeFileSync(path.join(FONT_CACHE_DIR, key) + '.bin', body); fs.writeFileSync(path.join(FONT_CACHE_DIR, key) + '.json', JSON.stringify({ status: rec.status, headers, url })); memNet.set(key, rec); }
+        return rec;
+      })().finally(() => netInflight.delete(key)));
+      hit = await netInflight.get(key);
+    }
+    await route.fulfill({ status: hit.status, headers: { ...hit.headers, 'access-control-allow-origin': '*' }, body: hit.body });
+  } catch (e) { try { await route.continue(); } catch { } }
+}
+
+/* ======================================================================================================
+   virtual time
+   page.clock (Playwright) fakes Date, setTimeout/setInterval, requestAnimationFrame, requestIdleCallback,
+   performance.now, Intl.DateTimeFormat default dates and Event.timeStamp. It does NOT touch CSS animations,
+   CSS transitions or Web Animations: those run on the document timeline (real time). ANIM_SHIM below takes
+   every running animation, pauses it, and sets its currentTime from the fake clock at every 16ms virtual
+   tick (and once per real frame), finishing it (finished promise, transitionend, animationend) when virtual
+   time passes its end. So `await anim.finished` chains and rAF loops follow page.clock.runFor().
+   ====================================================================================================== */
+// Playwright's clock yields a native setTimeout(0) after EVERY fired timer; Chrome clamps nested timeouts to 4ms, so a
+// timer-heavy page ran ~4.5ms real per virtual timer (2000 x 1ms timers: 9071ms). FAST_YIELD routes those zero-delay yields
+// through a MessageChannel (a full macrotask: microtasks drain, no clamp): the same 2000 timers take 12ms.
+const FAST_YIELD = `(() => {
+  const pw = globalThis.__pwClock; if (!pw || pw.__ptestFast) return; pw.__ptestFast = true;
+  const e = pw.controller._embedder, nst = e.setTimeout, mc = new MessageChannel(), q = [];
+  mc.port1.onmessage = () => { const f = q.shift(); f && f(); };
+  // a CSS animation/transition finished by the anim shim dispatches animationend/transitionend only on a real rendering frame:
+  // hold the clock for one real frame then, so those events carry the virtual time they belong to
+  const nraf = pw.builtin.requestAnimationFrame;
+  e.setTimeout = (task, timeout) => { if (!timeout) { q.push(task); if (pw.__needFrame) { pw.__needFrame = false; nraf(() => mc.port2.postMessage(0)); } else mc.port2.postMessage(0); return () => {}; } return nst(task, timeout); };
+})();`;
+// page.clock catches an exception thrown by a timer / rAF callback and rethrows only the first one from runFor (no 'pageerror').
+// TIMER_ERRORS wraps the fake timer functions so every such exception goes through reportError(): an ordinary uncaught page
+// error, exactly what real time gives, and the clock never sees a throw.
+const TIMER_ERRORS = `(() => {
+  if (!globalThis.__pwClock || globalThis.__ptestTimerWrap) return; globalThis.__ptestTimerWrap = true;
+  const wrap = cb => typeof cb !== 'function' ? cb : function (...a) { try { return cb.apply(this, a); } catch (e) { try { reportError(e); } catch (e2) { setTimeout(() => { throw e; }); } } };
+  for (const k of ['setTimeout', 'setInterval', 'requestAnimationFrame', 'requestIdleCallback', 'queueMicrotask']) {
+    const f = globalThis[k]; if (typeof f !== 'function') continue;
+    const w = { [k](cb, ...rest) { return f.call(this, wrap(cb), ...rest); } }[k];
+    try { Object.defineProperty(globalThis, k, { value: w, writable: true, configurable: true }); } catch (e) {}
+  }
+})();`;
+const ANIM_SHIM = syncMs => `(() => {
+  if (window.__ptestAnim || !globalThis.__pwClock) return;
+  const SYNC_MS = ${syncMs};
+  const pw = globalThis.__pwClock, ctl = pw.controller, nat = pw.builtin, realPerf = nat.performance;
+  const vnow = () => ctl.performanceNow();
+  const AP = Animation.prototype, EP = Element.prototype;
+  const o = { pause: AP.pause, play: AP.play, finish: AP.finish, cancel: AP.cancel, reverse: AP.reverse, upr: AP.updatePlaybackRate, animate: EP.animate };
+  const ctD = Object.getOwnPropertyDescriptor(AP, 'currentTime'), prD = Object.getOwnPropertyDescriptor(AP, 'playbackRate');
+  const getCT = a => ctD.get.call(a), setCT = (a, v) => ctD.set.call(a, v);
+  const C = new Map(), appPaused = new WeakSet(), SV = new Map();
+  const SMIL = ['animate', 'animateTransform', 'animateMotion', 'set'].map(t => document.getElementsByTagNameNS('http://www.w3.org/2000/svg', t));
+  // document.timeline.currentTime reads virtual time too (it is performance.now()'s twin in real time)
+  try { Object.defineProperty(document.timeline, 'currentTime', { configurable: true, get: () => vnow() }); } catch (e) {}
+  let enabled = true, lastReal = realPerf.now(), taken = 0, finished = 0;
+  const endOf = a => { try { return a.effect ? a.effect.getComputedTiming().endTime : 0; } catch (e) { return Infinity; } };
+  const due = a => { const r = C.get(a); if (!r) return; const rate = prD.get.call(a), tgt = r.t0 + (vnow() - r.v0) * rate, end = endOf(a);
+    if ((rate > 0 && tgt >= end - 0.5) || (rate < 0 && tgt <= 0.5)) { C.delete(a); finished++; try { o.finish.call(a); } catch (e) {} if (wantsEvent(a)) pw.__needFrame = true; }
+    else { r.end = end; if (rate > 0 && isFinite(end)) setTimeout(() => due(a), Math.max(1, (end - tgt) / rate)); } };
+  const take = (a, t0) => { try { o.pause.call(a); setCT(a, t0); const rate = prD.get.call(a), end = endOf(a);
+    C.set(a, { v0: vnow(), t0, end, last: t0 }); taken++;
+    if (rate > 0 && isFinite(end)) setTimeout(() => due(a), Math.max(0, (end - t0) / rate)); else if (rate < 0) setTimeout(() => due(a), Math.max(0, t0 / -rate)); // exact virtual end
+  } catch (e) {} };
+  let syncs = 0, syncMs = 0;
+  function sync() { const s0 = realPerf.now(); try { sync0(); } finally { syncs++; syncMs += realPerf.now() - s0; } }
+  function sync0() {
+    if (!enabled) return;
+    const v = vnow(), rn = realPerf.now(), realSince = Math.max(0, rn - lastReal); lastReal = rn;
+    let list; try { list = document.getAnimations(); } catch (e) { return; }
+    for (const a of list) {
+      if (C.has(a) || appPaused.has(a) || a.playState !== 'running') continue;
+      let ct = getCT(a); if (ct == null) ct = 0;
+      const rate = prD.get.call(a);
+      take(a, rate > 0 ? ct - Math.min(Math.max(ct, 0), realSince * rate) : ct); // undo the real time it ran before we saw it
+    }
+    // SVG SMIL (<animate>, <animateTransform>, <animateMotion>, <set>): each outermost <svg> is a time container. Pause it and
+    // drive its clock from virtual time (getCurrentTime() at first sight = the real time it already ran)
+    if (SMIL.some(col => col.length)) for (const col of SMIL) for (const el of col) {
+      let r = el.ownerSVGElement; while (r && r.ownerSVGElement) r = r.ownerSVGElement;
+      if (r && !SV.has(r)) { try { r.pauseAnimations(); SV.set(r, { v0: v, t0: r.getCurrentTime() }); } catch (e) {} }
+    }
+    for (const [r, q] of SV) { if (!r.isConnected) { SV.delete(r); continue; } try { r.setCurrentTime(q.t0 + (v - q.v0) / 1000); } catch (e) {} }
+    const alive = new Set(list);
+    for (const [a, r] of C) {
+      if (!alive.has(a)) { C.delete(a); continue; } // cancelled / removed
+      const rate = prD.get.call(a), tgt = r.t0 + (v - r.v0) * rate;
+      if ((rate > 0 && tgt >= r.end) || (rate < 0 && tgt <= 0)) { due(a); continue; }
+      if (tgt !== r.last) { r.last = tgt; try { setCT(a, tgt); } catch (e) {} }
+    }
+  }
+  // end events (animationend, transitionend, finish/onfinish) are only dispatched on a real frame. Hold the clock for one
+  // frame after a finish only when someone listens for them, so silent animations cost nothing
+  const EV = /^(animationend|animationiteration|animationcancel|transitionend|transitioncancel|finish|cancel)$/;
+  const listening = new WeakSet(); let globalListen = false;
+  const ETP = EventTarget.prototype, oAdd = ETP.addEventListener;
+  ETP.addEventListener = function (type, ...rest) { if (EV.test(type)) { if (this === window || this === document || this === document.documentElement || this === document.body) globalListen = true; else listening.add(this); } return oAdd.call(this, type, ...rest); };
+  for (const [proto, props] of [[AP, ['onfinish', 'oncancel']], [HTMLElement.prototype, ['onanimationend', 'ontransitionend', 'onanimationiteration']], [SVGElement.prototype, ['onanimationend', 'ontransitionend']], [Document.prototype, ['onanimationend', 'ontransitionend']]]) for (const k of props) {
+    let d = null; for (let p = proto; p && !d; p = Object.getPrototypeOf(p)) d = Object.getOwnPropertyDescriptor(p, k);
+    if (!d || !d.set) continue;
+    Object.defineProperty(proto, k, { configurable: true, enumerable: d.enumerable, get: d.get, set(v) { if (v) { if (this instanceof Document) globalListen = true; else listening.add(this); } d.set.call(this, v); } });
+  }
+  window.addEventListener = function (type, ...rest) { if (EV.test(type)) globalListen = true; return oAdd.call(this, type, ...rest); };
+  const wantsEvent = a => { if (globalListen || listening.has(a)) return true; const tg = a.effect && a.effect.target; for (let x = tg; x; x = x.parentElement) if (listening.has(x)) return true; return false; };
+  EP.animate = function (...args) { const a = o.animate.apply(this, args); if (enabled) take(a, getCT(a) || 0); return a; };
+  AP.play = function () { const r = o.play.call(this); appPaused.delete(this); if (enabled) take(this, getCT(this) || 0); return r; };
+  AP.pause = function () { C.delete(this); appPaused.add(this); return o.pause.call(this); };
+  AP.finish = function () { C.delete(this); return o.finish.call(this); };
+  AP.cancel = function () { C.delete(this); return o.cancel.call(this); };
+  AP.reverse = function () { const r = o.reverse.call(this); appPaused.delete(this); if (enabled) take(this, getCT(this) || 0); return r; };
+  AP.updatePlaybackRate = function (x) { const r = C.get(this); if (r) { r.t0 = getCT(this); r.v0 = vnow(); prD.set.call(this, x); return; } return o.upr.call(this, x); };
+  Object.defineProperty(AP, 'currentTime', { configurable: true, enumerable: true, get: ctD.get, set(x) { ctD.set.call(this, x); const r = C.get(this); if (r) { r.t0 = x; r.v0 = vnow(); r.last = x; } } });
+  Object.defineProperty(AP, 'playbackRate', { configurable: true, enumerable: true, get: prD.get, set(x) { const r = C.get(this); if (r) { r.t0 = getCT(this); r.v0 = vnow(); } prD.set.call(this, x); } });
+  setInterval(sync, SYNC_MS);                              // fake timer: runs inside page.clock.runFor (ends are exact: due())
+  const loop = () => { sync(); nat.requestAnimationFrame(loop); }; nat.requestAnimationFrame(loop); // real frames: catch new CSS animations fast
+  window.__ptestAnim = { sync, vnow, get controlled() { return C.size; }, get taken() { return taken; }, get finished() { return finished; }, get syncs() { return syncs; }, get syncMs() { return Math.round(syncMs); },
+    release() { enabled = false; for (const [a] of C) { try { o.play.call(a); } catch (e) {} } C.clear(); } };
+})();`;
+
+/** init script that replaces Math.random with a seeded PRNG (mulberry32), so random app choices repeat run to run */
+export const seedScript = seed => `(() => { let a = (${Number(seed) >>> 0}) >>> 0; Math.random = function random() { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })();`;
+/**
+ * Install virtual time on a page BEFORE page.goto(). The clock is paused at `time`; nothing timer-driven
+ * moves until runFor()/runUntil()/fastForward(). opts.animations: 'sync' (default, CSS/WAAPI follow the
+ * fake clock) | 'real' (leave animations on real time).
+ */
+export async function installVirtualTime(page, opts = {}) {
+  const time = opts.time != null ? +new Date(opts.time) : Date.parse('2026-10-27T23:30:00');
+  // the installed clock runs on real time until pauseAt: start it well before `time`, so a slow machine (seen: > 1 s between
+  // these two calls at load 200, 'Cannot fast-forward to the past') still pauses exactly at `time`
+  await page.clock.install({ time: time - 120000 });
+  await page.clock.pauseAt(time);
+  const scripts = [opts.fastYield !== false && FAST_YIELD, opts.timerErrors !== false && TIMER_ERRORS, opts.animations !== 'real' && ANIM_SHIM(opts.syncEvery || 32)].filter(Boolean);
+  for (const sc of scripts) await page.addInitScript(sc);
+  // also into the document that is already there (about:blank), so page.setContent() pages get them too
+  for (const sc of scripts) await page.evaluate(sc).catch(() => { });
+  page.__ptestVirtual = { time, animations: opts.animations || 'sync' };
+  return page;
+}
+export const isVirtual = page => !!page.__ptestVirtual;
+const syncAnims = page => page.evaluate(() => window.__ptestAnim && window.__ptestAnim.sync()).catch(() => {});
+// An app error thrown inside a timer / rAF callback is rethrown by page.clock (after it has run the rest of the span) instead of
+// reaching 'pageerror'. clockCall turns it back into a page error: page.__ptestTimerError(msg) (runMatrix records it in
+// t.errors.pageErrors, so failOnPageError decides, exactly as in real time). Without a handler, or when the page/browser is gone, it throws.
+async function clockCall(page, what, f) {
+  try { return await f(); }
+  catch (e) {
+    const msg = String(e && e.message || e);
+    if (!page.__ptestTimerError || page.isClosed() || /has been closed|Target closed|Browser closed|crash/i.test(msg)) throw e;
+    page.__ptestTimerError(msg.replace(/^clock\.\w+:\s*/, '').replace(/^\w*Error:\s*/, '').split('\n')[0], what);
+  }
+}
+/** advance virtual time by ms, firing every timer/rAF in order; animations follow */
+export async function runFor(page, ms) {
+  if (!page.__ptestVirtual) throw new Error('runFor: virtual time not installed on this page (installVirtualTime before goto, or case.virtual)');
+  await clockCall(page, 'runFor', () => page.clock.runFor(Math.max(0, Math.round(ms)))); await syncAnims(page);
+}
+/** jump ahead WITHOUT firing intervals in between (each due timer fires at most once) */
+export async function fastForward(page, ms) { await clockCall(page, 'fastForward', () => page.clock.fastForward(Math.round(ms))); await syncAnims(page); }
+/** advance until a wall-clock time (Date or ms) and stay paused there */
+export async function pauseAt(page, time) { await clockCall(page, 'pauseAt', () => page.clock.pauseAt(+new Date(time))); await syncAnims(page); }
+/** wait n REAL rendering frames (native rAF, even under a fake clock): lets IntersectionObserver/ResizeObserver callbacks and
+ *  animation events, which only run on rendering frames, fire before you advance virtual time again */
+export const realFrames = (page, n = 2) => page.evaluate(n => new Promise(r => { const raf = (window.__pwClock && window.__pwClock.builtin.requestAnimationFrame) || requestAnimationFrame; let k = 0; const f = () => ++k >= n ? r() : raf(f); raf(f); }), n);
+/** virtual performance.now() in the page */
+export const vnow = page => page.evaluate(() => performance.now());
+/**
+ * advance virtual time in `step` ms slices until predicate(arg) is truthy in the page.
+ * returns the virtual ms it took. throws after `max` virtual ms.
+ */
+export async function runUntil(page, predicate, { step = 50, max = 60000, arg } = {}) {
+  let spent = 0;
+  const fnSrc = typeof predicate === 'string' ? `() => (${predicate})` : predicate.toString();
+  const check = () => page.evaluate(([src, a]) => { try { return !!(0, eval)('(' + src + ')')(a); } catch (e) { return false; } }, [fnSrc, arg]);
+  while (!(await check())) {
+    if (spent >= max) throw new Error(`runUntil: predicate still false after ${max} virtual ms: ${fnSrc.slice(0, 120)}`);
+    await runFor(page, step); spent += step;
+  }
+  return spent;
+}
+/** fast REAL time (no fake clock): every CSS/WAAPI animation's timeline runs `rate` x faster (CDP). Timers stay real. */
+export async function speedAnimations(page, rate = 10) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Animation.enable'); await cdp.send('Animation.setPlaybackRate', { playbackRate: rate });
+  return cdp;
+}
+
+/* ======================================================================================================
+   animation seeking: deterministic frames without waiting
+   ====================================================================================================== */
+/** remember every animation that exists now (freezeAt({onlyNew:true}) leaves them in place), and the virtual time now
+ *  (under virtual time, freezeAt(ms) means "ms after this mark") */
+export const markAnimations = page => page.evaluate(() => { window.__ptestMarked = new WeakSet(document.getAnimations()); window.__ptestMarkV = performance.now(); return document.getAnimations().length; });
+// pause in place (t == null) or seek (number | 'NN%' | 'end'); returns one entry per animation it touched
+const FREEZE_IN_PAGE = async ([t, o]) => {
+  const root = o.selector ? document.querySelector(o.selector) : null;
+  if (o.selector && !root) throw new Error('freezeAt: no element ' + o.selector);
+  const marked = window.__ptestMarked || new WeakSet(), frozen = window.__ptestFrozen || (window.__ptestFrozen = new Set());
+  const out = [];
+  for (const a of document.getAnimations()) {
+    const tg = a.effect && a.effect.target;
+    const inside = !root || (tg && root.contains(tg));
+    if (!inside) { if (o.freezeOthers) { a.pause(); frozen.add(a); } continue; }
+    a.pause(); frozen.add(a);
+    const isOld = o.onlyNew && marked.has(a);
+    if (isOld) continue;
+    const ct = a.effect.getComputedTiming(), end = ct.endTime, delay = a.effect.getTiming().delay || 0;
+    if (t != null) {
+      let v = typeof t === 'number' ? t : t === 'end' ? end : /%$/.test(t) ? (isFinite(end) ? end : ct.activeDuration || 0) * parseFloat(t) / 100 : +t;
+      if (o.offset === 'delay') v += delay; else if (typeof o.offset === 'number') v += o.offset;
+      a.currentTime = Math.max(0, Math.min(isFinite(end) ? end : v, v));
+    }
+    out.push({ target: tg ? (tg.id ? '#' + tg.id : tg.tagName.toLowerCase() + (tg.getAttribute('class') ? '.' + String(tg.getAttribute('class')).trim().split(/\s+/)[0] : '')) : '?', name: a.animationName || a.transitionProperty || a.id || 'waapi', t: Math.round(a.currentTime || 0), end: isFinite(end) ? Math.round(end) : 'inf', seeked: t != null });
+  }
+  const raf = (window.__pwClock && window.__pwClock.builtin.requestAnimationFrame) || requestAnimationFrame;
+  await new Promise(r => raf(() => raf(r)));
+  return out;
+};
+// resume what an earlier freezeAt paused (animations at their end are finished, not restarted)
+const THAW_IN_PAGE = () => {
+  const fz = window.__ptestFrozen; if (!fz) return 0; let n = 0;
+  for (const a of fz) { if (a.playState !== 'paused') continue; n++;
+    try { const end = a.effect ? a.effect.getComputedTiming().endTime : Infinity; if (isFinite(end) && (a.currentTime || 0) >= end - 0.01) a.finish(); else a.play(); } catch (e) { } }
+  fz.clear(); return n;
+};
+/**
+ * freezeAt(page, t, opts): pause animations for a deterministic frame.
+ * t: number (ms) | '50%' (of each animation's endTime) | 'end' | null (pause everything in place, where it is now)
+ *
+ * VIRTUAL TIME + number (the normal case): advance the clock to `t` ms after the last t.mark() (or after now, if there is no
+ *   mark), so the app's JS timers (eye swaps, prop classes, setTimeout chains) run too, then pause every animation in place.
+ *   This is the frame real playback shows at that moment. It throws if the clock is already past mark + t.
+ *   opts.seek: true forces the old pure seek (CSS/WAAPI only, JS-driven state NOT advanced): only for pure CSS scenes.
+ * REAL TIME, or '%' / 'end' / opts.seek: pause and seek each animation's currentTime. JS-driven state is whatever it is now.
+ * opts.selector: only animations whose target is inside this element (others untouched unless opts.freezeOthers)
+ * opts.onlyNew: animations alive at the last markAnimations() are paused in place, not seeked
+ * opts.offset: added to t for each animation ('delay' = relative to each one's own delay)
+ * Under virtual time, a later freezeAt(ms) first resumes what the previous freezeAt paused (so freezeAt(500) then
+ *   freezeAt(1000) gives two real frames); the seek path never resumes anything.
+ * returns [{target, name, t, end, seeked}] for every animation it paused (old marked ones excluded with onlyNew);
+ *   the array also carries .advancedMs (virtual ms the clock moved, 0 for a seek).
+ */
+export async function freezeAt(page, t, opts = {}) {
+  let advancedMs = 0, out;
+  if (page.__ptestVirtual && typeof t === 'number' && !opts.seek) {
+    await page.evaluate(THAW_IN_PAGE); // what an earlier freezeAt paused moves on with the clock
+    const since = await page.evaluate(() => window.__ptestMarkV == null ? 0 : performance.now() - window.__ptestMarkV);
+    advancedMs = Math.round(t - since);
+    if (advancedMs < 0) throw new Error(`freezeAt(${t}): the virtual clock is already ${Math.round(since)}ms past the last mark; call t.mark() right before starting what you want to freeze, or use { seek: true }`);
+    if (advancedMs > 0) await runFor(page, advancedMs);
+    out = await page.evaluate(FREEZE_IN_PAGE, [null, opts]);
+  } else out = await page.evaluate(FREEZE_IN_PAGE, [t, opts]);
+  out.advancedMs = advancedMs;
+  return out;
+}
+/** resume the animations the last freezeAt paused (finished ones stay at their end); returns how many */
+export const thawAnimations = page => page.evaluate(THAW_IN_PAGE);
+
+/* ======================================================================================================
+   PNG decode (zlib only) + screenshots + contact sheets
+   ====================================================================================================== */
+export function decodePng(buf) {
+  if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error('not a png');
+  let o = 8, w = 0, h = 0, depth = 0, ctype = 0, inter = 0; const idat = [];
+  while (o < buf.length) {
+    const len = buf.readUInt32BE(o), type = buf.toString('ascii', o + 4, o + 8), d = buf.subarray(o + 8, o + 8 + len);
+    if (type === 'IHDR') { w = d.readUInt32BE(0); h = d.readUInt32BE(4); depth = d[8]; ctype = d[9]; inter = d[12]; }
+    else if (type === 'IDAT') idat.push(d); else if (type === 'IEND') break;
+    o += 12 + len;
+  }
+  if (depth !== 8 || inter || ![2, 6, 0, 4].includes(ctype)) throw new Error(`unsupported png depth=${depth} type=${ctype} interlace=${inter}`);
+  const ch = { 0: 1, 2: 3, 4: 2, 6: 4 }[ctype], raw = zlib.inflateSync(Buffer.concat(idat)), stride = w * ch;
+  const px = Buffer.alloc(w * h * 4); let prev = Buffer.alloc(stride), p = 0;
+  for (let y = 0; y < h; y++) {
+    const f = raw[p++], line = Buffer.from(raw.subarray(p, p + stride)); p += stride;
+    for (let x = 0; x < stride; x++) {
+      const a = x >= ch ? line[x - ch] : 0, b = prev[x], c = x >= ch ? prev[x - ch] : 0;
+      let v = line[x];
+      if (f === 1) v += a; else if (f === 2) v += b; else if (f === 3) v += (a + b) >> 1;
+      else if (f === 4) { const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c); v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c; }
+      line[x] = v & 255;
+    }
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4, s = x * ch;
+      if (ch >= 3) { px[i] = line[s]; px[i + 1] = line[s + 1]; px[i + 2] = line[s + 2]; px[i + 3] = ch === 4 ? line[s + 3] : 255; }
+      else { px[i] = px[i + 1] = px[i + 2] = line[s]; px[i + 3] = ch === 2 ? line[s + 1] : 255; }
+    }
+    prev = line;
+  }
+  return { width: w, height: h, data: px };
+}
+/**
+ * fastScreenshot(page, {path, clip, fullPage}) -> Buffer (png). CDP Page.captureScreenshot with optimizeForSpeed: the same
+ * lossless PNG pixels as page.screenshot(), but encoded with fast zlib settings. PNG encoding runs in the browser process and
+ * was the bottleneck of parallel runs: 171ms/shot serial, 838ms/shot at 6 parallel with page.screenshot vs 63 / 249ms here.
+ * clip is in viewport CSS px (like page.screenshot).
+ */
+const cdpOf = async page => page.__ptestCdp || (page.__ptestCdp = await page.context().newCDPSession(page));
+export async function fastScreenshot(page, { path: p, clip, fullPage } = {}) {
+  const cdp = await cdpOf(page);
+  const m = await page.evaluate(() => ({ x: visualViewport.pageLeft, y: visualViewport.pageTop, w: innerWidth, h: innerHeight, sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight, k: devicePixelRatio }));
+  if (m.k !== 1) { // r3 ART-4: at dpr != 1 a capture from ptest's own CDP session (which carries no device-metrics override) left the page at
+    // devicePixelRatio 1 for the rest of the case: hand those to Playwright, whose session owns the emulation (same pixels, device px)
+    const buf = await page.screenshot({ clip, fullPage, animations: 'allow', caret: 'initial', scale: 'device' });
+    if (p) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, buf); }
+    return buf;
+  }
+  const params = { format: 'png', optimizeForSpeed: true };
+  if (fullPage) Object.assign(params, { captureBeyondViewport: true, clip: { x: 0, y: 0, width: Math.max(m.w, m.sw), height: Math.max(m.h, m.sh), scale: m.k } });
+  else params.clip = clip ? { x: clip.x + m.x, y: clip.y + m.y, width: clip.width, height: clip.height, scale: m.k } : { x: m.x, y: m.y, width: m.w, height: m.h, scale: m.k };
+  const { data } = await cdp.send('Page.captureScreenshot', params);
+  const buf = Buffer.from(data, 'base64');
+  if (p) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, buf); }
+  return buf;
+}
+/** screenshot with consistent naming: <dir>/<id>--<label>.png. returns the path. engine 'cdp' (fast, default) | 'playwright' */
+export async function shot(page, { dir = OUT_DIR, id = 'page', label = 'shot', engine = 'cdp', ...opts } = {}) {
+  fs.mkdirSync(dir, { recursive: true });
+  const p = path.join(dir, `${slug(id)}--${slug(label)}.png`);
+  if (engine === 'cdp' && !opts.mask && !opts.omitBackground && !opts.type) await fastScreenshot(page, { path: p, clip: opts.clip, fullPage: opts.fullPage });
+  else await page.screenshot({ path: p, ...opts });
+  return p;
+}
+/**
+ * contact sheet built in Chrome. pngs: [path] or [{path, label}]. writes `out` (png).
+ * opts: cols (auto), thumb (px width per tile, default 260), title, browser (reuse one), bg
+ */
+export async function contactSheet(pngs, out, opts = {}) {
+  const items = pngs.map(p => typeof p === 'string' ? { path: p, label: path.basename(p, '.png') } : p).filter(i => fs.existsSync(i.path));
+  if (!items.length) throw new Error('contactSheet: no existing pngs');
+  const thumb = opts.thumb || 260, cols = opts.cols || Math.min(items.length, Math.max(1, Math.floor(2400 / (thumb + 12))));
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const html = `<!doctype html><meta charset=utf-8><style>body{margin:0;padding:12px;background:${opts.bg || '#15161c'};color:#ddd;font:12px ui-monospace,Menlo,monospace}
+h1{font-size:14px;margin:0 0 10px}.g{display:grid;grid-template-columns:repeat(${cols},${thumb}px);gap:10px;align-items:start}
+figure{margin:0}img{width:${thumb}px;display:block;background:#000;outline:1px solid #333}figcaption{padding:3px 0 0;word-break:break-all;line-height:1.25}</style>
+${opts.title ? `<h1>${esc(opts.title)}</h1>` : ''}<div class=g>${items.map(i => `<figure><img src="${pathToFileURL(i.path).href}"><figcaption>${esc(i.label)}</figcaption></figure>`).join('')}</div>`;
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  const tmp = out.replace(/\.png$/, '') + '.sheet.html'; fs.writeFileSync(tmp, html);
+  const own = !opts.browser, browser = opts.browser || await chromium.launch({ channel: 'chrome' });
+  try {
+    const ctx = await browser.newContext({ viewport: { width: cols * (thumb + 10) + 24, height: 600 }, deviceScaleFactor: 1 });
+    const page = await ctx.newPage();
+    await page.goto(pathToFileURL(tmp).href);
+    await page.evaluate(() => Promise.race([Promise.all([...document.images].map(i => i.decode().catch(() => { }))), new Promise(r => setTimeout(r, 15000))]));
+    await page.screenshot({ path: out, fullPage: true });
+    await ctx.close();
+  } finally { if (own) await browser.close(); fs.rmSync(tmp, { force: true }); }
+  return out;
+}
+
+/* ======================================================================================================
+   contrast with the real pixels behind the text
+   ====================================================================================================== */
+const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const lum = (r, g, b) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+export const contrastRatio = (l1, l2) => (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+/**
+ * contrastAt(page, selector): screenshots the element's box with its text, then with the text made transparent,
+ * and compares. glyph pixels = pixels that changed. For each glyph pixel: background = the real pixel without the
+ * text; nominal = the computed text color composited on that pixel. Reports the worst (p5), median and best ratio.
+ * Freeze or virtual-time the page first: anything moving between the two shots pollutes the diff.
+ */
+export async function contrastAt(page, selector, opts = {}) {
+  const info = await page.evaluate(sel => {
+    const el = document.querySelector(sel); if (!el) return null;
+    const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+    let m = cs.color.match(/[\d.]+/g).map(Number);
+    if (!/^rgba?\(/.test(cs.color)) { // b6: color-mix(), color(srgb ...) and an animated oklab() colour: let a canvas resolve it to sRGB 0..255
+      const cv = document.createElement('canvas'); cv.width = cv.height = 1; const x = cv.getContext('2d'); x.fillStyle = cs.color; x.fillRect(0, 0, 1, 1);
+      const d = x.getImageData(0, 0, 1, 1).data; m = [d[0], d[1], d[2], d[3] / 255]; }
+    return { x: r.left, y: r.top, w: r.width, h: r.height, color: m, fontSize: parseFloat(cs.fontSize), fontWeight: +cs.fontWeight || 400, vw: innerWidth, vh: innerHeight };
+  }, selector);
+  if (!info) throw new Error('contrastAt: no element ' + selector);
+  const x = Math.max(0, Math.floor(info.x) - 1), y = Math.max(0, Math.floor(info.y) - 1);
+  const clip = { x, y, width: Math.min(info.vw - x, Math.ceil(info.w) + 2), height: Math.min(info.vh - y, Math.ceil(info.h) + 2) };
+  if (clip.width < 1 || clip.height < 1) throw new Error('contrastAt: element is outside the viewport: ' + selector);
+  const A = decodePng(await fastScreenshot(page, { clip }));
+  const id = 'ptest-ct-' + Math.random().toString(36).slice(2);
+  await page.evaluate(([sel, id]) => { const s = document.createElement('style'); s.id = id; s.textContent = `${sel}, ${sel} * { color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important; -webkit-text-stroke: 0 !important; text-decoration-color: transparent !important; caret-color: transparent !important }`; document.head.appendChild(s); }, [selector, id]);
+  let B;
+  try { B = decodePng(await fastScreenshot(page, { clip })); }
+  finally { await page.evaluate(id => document.getElementById(id)?.remove(), id); }
+  const [cr, cg, cb, ca = 1] = info.color, thr = opts.threshold ?? 24;
+  const nominal = [], rendered = []; let bgMin = 1, bgMax = 0;
+  for (let i = 0; i < A.data.length; i += 4) {
+    const d = Math.abs(A.data[i] - B.data[i]) + Math.abs(A.data[i + 1] - B.data[i + 1]) + Math.abs(A.data[i + 2] - B.data[i + 2]);
+    if (d < thr) continue;
+    const bl = lum(B.data[i], B.data[i + 1], B.data[i + 2]); bgMin = Math.min(bgMin, bl); bgMax = Math.max(bgMax, bl);
+    const fr = cr * ca + B.data[i] * (1 - ca), fg = cg * ca + B.data[i + 1] * (1 - ca), fb = cb * ca + B.data[i + 2] * (1 - ca);
+    nominal.push(contrastRatio(lum(fr, fg, fb), bl));
+    rendered.push(contrastRatio(lum(A.data[i], A.data[i + 1], A.data[i + 2]), bl));
+  }
+  if (!nominal.length) return { selector, glyphPixels: 0, ratio: null, note: 'no glyph pixels changed (text hidden, transparent, or identical to background)' };
+  const large = info.fontSize >= 24 || (info.fontSize >= 18.66 && info.fontWeight >= 700);
+  const ratio = +quantile(nominal, 0.05).toFixed(2), need = large ? 3 : 4.5;
+  return {
+    selector, glyphPixels: nominal.length, fontSize: info.fontSize, large, color: info.color,
+    ratio, median: +median(nominal).toFixed(2), best: +Math.max(...nominal).toFixed(2),
+    renderedP90: +quantile(rendered, 0.9).toFixed(2), bgLum: [+bgMin.toFixed(3), +bgMax.toFixed(3)], need, pass: ratio >= need,
+  };
+}
+
+/* ======================================================================================================
+   bboxAudit: the geometry checks every stage keeps rewriting
+   ====================================================================================================== */
+function auditInPage(o) {
+  const minGap = o.minGap ?? 8, minTarget = o.minTarget ?? 44, minFont = o.minFont ?? 12, minOpacity = o.minOpacity ?? 0.05;
+  const root = o.root ? document.querySelector(o.root) : document.body;
+  if (!root) return { error: 'no root ' + o.root, findings: [], ok: false };
+  const ignoreSel = (o.ignore || []).join(',');
+  const vw = document.documentElement.clientWidth, vh = innerHeight, sx = scrollX, sy = scrollY;
+  const csC = new Map(); const cs = el => { let s = csC.get(el); if (!s) { s = getComputedStyle(el); csC.set(el, s); } return s; };
+  const ignored = el => !!(ignoreSel && el.closest(ignoreSel));
+  const label = (el, txt) => {
+    let s = el.tagName.toLowerCase(); if (el.id) s += '#' + el.id;
+    const c = el.getAttribute('class'); if (c && typeof c === 'string') s += '.' + c.trim().split(/\s+/).slice(0, 2).join('.');
+    if (txt) s += ` "${txt.trim().replace(/\s+/g, ' ').slice(0, 28)}"`;
+    return s;
+  };
+  const opac = el => { let a = 1; for (let x = el; x && x.nodeType === 1; x = x.parentElement) { a *= +cs(x).opacity; if (a < minOpacity) break; } return a; };
+  const parseInset = (s, b) => { // clip-path: inset(t r b l) on border box
+    const m = /^inset\(([^)]*)\)/.exec(s); if (!m) return null;
+    const v = m[1].split(/\s+round\s+/)[0].trim().split(/\s+/);
+    const [t, r, bb, l] = [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]];
+    const px = (x, ref) => /%$/.test(x) ? parseFloat(x) / 100 * ref : parseFloat(x) || 0;
+    return { x: b.left + px(l, b.width), y: b.top + px(t, b.height), r: b.right - px(r, b.width), b: b.bottom - px(bb, b.height) };
+  };
+  const parseClipRect = (s, b) => { const m = /^rect\(([^)]*)\)/.exec(s); if (!m) return null; const v = m[1].split(/[\s,]+/).map(x => x === 'auto' ? null : parseFloat(x)); return { x: b.left + (v[3] ?? 0), y: b.top + (v[0] ?? 0), r: v[1] == null ? b.right : b.left + v[1], b: v[2] == null ? b.bottom : b.top + v[2] }; };
+  const inter = (a, b) => ({ x: Math.max(a.x, b.x), y: Math.max(a.y, b.y), r: Math.min(a.r, b.r), b: Math.min(a.b, b.b) });
+  const isCB = s => s.transform !== 'none' || s.filter !== 'none' || /paint|strict|content/.test(s.contain) || (s.willChange || '').includes('transform');
+  // visible clip of an element (viewport coords): ancestor overflow (respecting containing blocks), clip-path inset, clip
+  const clipOf = (el, self) => {
+    // c: every clip (overflow of any kind, clip-path inset, clip); h: only the hard ones (overflow hidden/clip, clip-path, clip),
+    // i.e. what scrolling cannot reveal; intent: a clip-path/clip was involved (deliberate hiding)
+    let c = { x: -1e9, y: -1e9, r: 1e9, b: 1e9 }, h = c, complex = false, intent = false;
+    const ov = (x, s) => {
+      if (s.overflowX === 'visible' && s.overflowY === 'visible') return;
+      const b = x.getBoundingClientRect();
+      const rx = s.overflowX !== 'visible', ry = s.overflowY !== 'visible';
+      const R = { x: rx ? b.left : -1e9, r: rx ? b.right : 1e9, y: ry ? b.top : -1e9, b: ry ? b.bottom : 1e9 };
+      c = inter(c, R);
+      const hx = /hidden|clip/.test(s.overflowX), hy = /hidden|clip/.test(s.overflowY);
+      if (hx || hy) h = inter(h, { x: hx ? b.left : -1e9, r: hx ? b.right : 1e9, y: hy ? b.top : -1e9, b: hy ? b.bottom : 1e9 });
+    };
+    const paint = (x, s) => {
+      if (s.clipPath && s.clipPath !== 'none') { const r = parseInset(s.clipPath, x.getBoundingClientRect()); if (r) { c = inter(c, r); h = inter(h, r); } else complex = true; intent = true; }
+      if ((s.position === 'absolute' || s.position === 'fixed') && s.clip && s.clip !== 'auto') { const r = parseClipRect(s.clip, x.getBoundingClientRect()); if (r) { c = inter(c, r); h = inter(h, r); intent = true; } }
+    };
+    let mode = cs(el).position === 'fixed' ? 'fixed' : cs(el).position === 'absolute' ? 'absolute' : 'normal';
+    paint(el, cs(el)); if (self) ov(el, cs(el));
+    for (let x = el.parentElement; x && x !== document.documentElement; x = x.parentElement) {
+      const s = cs(x);
+      if (s.clipPath && s.clipPath !== 'none') { const r = parseInset(s.clipPath, x.getBoundingClientRect()); if (r) { c = inter(c, r); h = inter(h, r); } else complex = true; intent = true; }
+      const contains = mode === 'fixed' ? isCB(s) : mode === 'absolute' ? (s.position !== 'static' || isCB(s)) : true;
+      if (!contains) continue;
+      ov(x, s);
+      if ((s.position === 'absolute' || s.position === 'fixed') && s.clip && s.clip !== 'auto') { const r = parseClipRect(s.clip, x.getBoundingClientRect()); if (r) { c = inter(c, r); h = inter(h, r); intent = true; } }
+      mode = s.position === 'fixed' ? 'fixed' : s.position === 'absolute' ? 'absolute' : 'normal';
+    }
+    return { c, h, complex, intent };
+  };
+  const visibleEl = el => { const s = cs(el); return s.visibility === 'visible' && s.display !== 'none' && opac(el) >= minOpacity; };
+  const box = (r) => ({ x: r.left, y: r.top, r: r.right, b: r.bottom });
+  const area = b => Math.max(0, b.r - b.x) * Math.max(0, b.b - b.y);
+  const items = [], findings = [];
+  const TARGET = o.targets || 'a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=link], [role=tab], [role=switch], [role=checkbox], [role=menuitem], [tabindex]:not([tabindex="-1"])';
+  const fixedEls = [...document.querySelectorAll('body *')].filter(el => { const s = cs(el); return (s.position === 'fixed' || (o.fixed && el.matches(o.fixed))) && !ignored(el) && visibleEl(el); })
+    .map(el => ({ el, b: box(el.getBoundingClientRect()) })).filter(f => area(f.b) > 4 && area(f.b) < vw * vh * (o.maxFixedArea ?? 0.6) && !(o.fixedIgnore && f.el.matches(o.fixedIgnore.join(','))));
+  const inFixed = el => fixedEls.some(f => f.el.contains(el));
+  // text: one item per element with direct non-blank text
+  const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: n => /\S/.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+  const textBy = new Map();
+  for (let n; (n = tw.nextNode());) { const el = n.parentElement; if (!el || /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|TITLE|OPTION)$/.test(el.tagName)) continue; if (!textBy.has(el)) textBy.set(el, []); textBy.get(el).push(n); }
+  for (const [el, nodes] of textBy) {
+    if (ignored(el) || !visibleEl(el)) continue;
+    if (!o.iconText && el.closest('svg, [role=img]')) continue; // glyphs that are part of a picture (svg text, a role=img glyph grid)
+    const s = cs(el), fs = parseFloat(s.fontSize), lh = s.lineHeight === 'normal' ? fs * 1.2 : parseFloat(s.lineHeight);
+    const rects = [];
+    for (const n of nodes) { const rg = document.createRange(); rg.selectNodeContents(n); for (const r of rg.getClientRects()) if (r.width > 0.5 && r.height > 0.5) rects.push(r); }
+    if (!rects.length) continue;
+    // line boxes: each line's font content box shrunk to the line-height, so ascender/descender overhang is not "overlap"/"clipped"
+    const lines = rects.map(r => { const sh = r.height > lh ? (r.height - lh) / 2 : 0; return { x: r.left, y: r.top + sh, r: r.right, b: r.bottom - sh }; });
+    const raw = { x: Math.min(...lines.map(r => r.x)), y: Math.min(...lines.map(r => r.y)), r: Math.max(...lines.map(r => r.r)), b: Math.max(...lines.map(r => r.b)) };
+    const { c, h, complex, intent } = clipOf(el, true), vis = inter(raw, c);
+    const txt = nodes.map(n => n.nodeValue).join(' ');
+    if (area(vis) < 2) { // not visible now. scrolled out of a scroll box, sr-only, collapsed, clip-path: fine. pushed out of overflow:hidden: not
+      if (area(inter(raw, h)) < 2 && !intent && area(h) >= 4 && !(o.clipIgnore && el.closest(o.clipIgnore.join(','))))
+        findings.push({ type: 'clippedText', a: label(el, txt), detail: 'fully clipped by an overflow:hidden box', box: raw });
+      continue;
+    }
+    items.push({ kind: 'text', el, label: label(el, txt), raw, b: vis, lines: lines.map(l => inter(l, c)).filter(l => area(l) > 1), fontSize: fs, complex, visFrac: area(vis) / area(raw) });
+  }
+  // icons
+  for (const el of root.querySelectorAll('svg, img, canvas, video, [role=img]')) {
+    if (el.tagName.toLowerCase() === 'svg' && el.parentElement && el.parentElement.closest('svg')) continue;
+    if (ignored(el) || !visibleEl(el)) continue;
+    const raw = box(el.getBoundingClientRect()); const { c } = clipOf(el, false); const vis = inter(raw, c);
+    if (area(vis) < 2) continue;
+    const decor = area(vis) > vw * vh * (o.maxIconArea ?? 0.25);
+    items.push({ kind: 'icon', el, label: label(el, el.getAttribute('aria-label') || el.getAttribute('alt') || ''), raw, b: vis, decor });
+  }
+  // targets
+  for (const el of root.querySelectorAll(TARGET)) {
+    if (ignored(el) || !visibleEl(el) || el.closest('[inert]')) continue;
+    const raw = box(el.getBoundingClientRect()); const { c } = clipOf(el, false); const vis = inter(raw, c);
+    if (area(vis) < 2) continue;
+    items.push({ kind: 'target', el, label: label(el, el.getAttribute('aria-label') || el.textContent || ''), raw, b: vis });
+  }
+  const targets = items.filter(i => i.kind === 'target');
+  const ownerTarget = it => targets.find(t => t.el !== it.el && t.el.contains(it.el));
+  const groupOf = el => o.groups ? el.closest(o.groups.join(',')) : null;
+  // single-item checks
+  for (const it of items) {
+    if (it.kind === 'target') {
+      const w = it.raw.r - it.raw.x, h = it.raw.b - it.raw.y;
+      if ((w < minTarget || h < minTarget) && !(o.targetIgnore && it.el.matches(o.targetIgnore.join(',')))) findings.push({ type: 'smallTarget', a: it.label, detail: `${w.toFixed(0)}x${h.toFixed(0)} < ${minTarget}`, box: it.raw });
+    }
+    if (it.kind === 'text') {
+      if (it.fontSize < minFont) findings.push({ type: 'smallText', a: it.label, detail: `${it.fontSize}px < ${minFont}px`, box: it.b });
+      if (it.visFrac < 0.98 && (it.raw.r - it.b.r > 1 || it.b.x - it.raw.x > 1 || it.raw.b - it.b.b > 1 || it.b.y - it.raw.y > 1)) findings.push({ type: 'clippedText', a: it.label, detail: `visible ${(it.visFrac * 100).toFixed(0)}%${cs(it.el).textOverflow === 'ellipsis' ? ' (ellipsis)' : ''}`, box: it.raw });
+      else if (it.b.x < -0.5 || it.b.r > vw + 0.5) findings.push({ type: 'clippedText', a: it.label, detail: `outside viewport x ${it.b.x.toFixed(0)}..${it.b.r.toFixed(0)} (vw ${vw})`, box: it.b });
+    }
+  }
+  // pairs: an item inside a target is represented by that target
+  const pairable = items.filter(it => !(it.kind === 'icon' && it.decor) && (it.kind === 'target' || !ownerTarget(it)) && !(o.pairIgnore && it.el.closest(o.pairIgnore.join(','))));
+  const skip = (a, b) => (o.pairsSkip || []).some(([p, q]) => (a.el.closest(p) && b.el.closest(q)) || (a.el.closest(q) && b.el.closest(p)));
+  const related = (a, b) => a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el) || (groupOf(a.el) && groupOf(a.el) === groupOf(b.el));
+  const gapOf = (A, B) => { const gx = Math.max(A.x - B.r, B.x - A.r), gy = Math.max(A.y - B.b, B.y - A.b); return { gx, gy, gap: Math.max(gx, gy) }; };
+  for (let i = 0; i < pairable.length; i++) for (let j = i + 1; j < pairable.length; j++) {
+    const a = pairable[i], b = pairable[j];
+    if (related(a, b) || skip(a, b)) continue;
+    if (a.kind === 'icon' && b.kind === 'icon' && !o.iconPairs) continue; // layered artwork; opts.iconPairs to check
+    const fixA = inFixed(a.el), fixB = inFixed(b.el); if (fixA !== fixB) continue; // fixed vs flow: handled by underFixed (viewport space)
+    let g;
+    if (a.kind === 'text' && b.kind === 'text') { // line boxes, so stacked text blocks with tight leading do not report font overhang
+      g = { gap: Infinity }; for (const la of a.lines) for (const lb of b.lines) { const q = gapOf(la, lb); if (q.gap < g.gap) g = q; }
+    } else g = gapOf(a.b, b.b);
+    if (g.gx < -0.5 && g.gy < -0.5) { findings.push({ type: 'overlap', a: a.label, b: b.label, detail: `${(-g.gx).toFixed(1)}x${(-g.gy).toFixed(1)}px`, kinds: a.kind + '/' + b.kind, box: a.b }); continue; }
+    const need = (a.kind === 'target' && b.kind === 'target') || (a.kind === 'icon') !== (b.kind === 'icon') ? minGap : (a.kind === 'text' && b.kind === 'text' && o.textGap != null ? o.textGap : null);
+    if (need != null && g.gap < need) findings.push({ type: 'clearance', a: a.label, b: b.label, detail: `gap ${g.gap.toFixed(1)}px < ${need}`, kinds: a.kind + '/' + b.kind, box: a.b });
+  }
+  // under fixed chrome (viewport space, at the current scroll)
+  for (const f of fixedEls) for (const it of pairable) {
+    if (inFixed(it.el) || f.el.contains(it.el) || it.el.contains(f.el)) continue;
+    const I = inter(f.b, it.b); if (I.r - I.x > 0.5 && I.b - I.y > 0.5) findings.push({ type: 'underFixed', a: it.label, b: label(f.el), detail: `${(I.r - I.x).toFixed(0)}x${(I.b - I.y).toFixed(0)}px under fixed`, box: it.b });
+  }
+  // horizontal scroll
+  const sw = document.documentElement.scrollWidth;
+  if (sw > vw + 1) {
+    const culprits = [...document.querySelectorAll('body *')].filter(el => { const r = el.getBoundingClientRect(); return r.right > vw + 1 && r.width > 0 && visibleEl(el) && clipOf(el, false).c.r > vw + 1; })
+      .filter((el, _, arr) => !arr.some(p => p !== el && p.contains(el))).slice(0, 8).map(el => label(el) + ` right=${el.getBoundingClientRect().right.toFixed(0)}`);
+    findings.push({ type: 'hScroll', detail: `scrollWidth ${sw} > ${vw}`, culprits });
+  }
+  const counts = {}; for (const f of findings) counts[f.type] = (counts[f.type] || 0) + 1;
+  const kinds = {}; for (const it of items) kinds[it.kind] = (kinds[it.kind] || 0) + 1;
+  const r4 = b => b && ({ x: Math.round(b.x + sx), y: Math.round(b.y + sy), w: Math.round(b.r - b.x), h: Math.round(b.b - b.y) });
+  return { ok: !findings.length, viewport: { width: vw, height: vh, scrollY: sy }, counts, items: kinds, fixed: fixedEls.map(f => label(f.el)), findings: findings.map(f => ({ ...f, box: r4(f.box) })),
+    itemList: o.listItems ? items.map(i => ({ kind: i.kind, label: i.label, box: r4(i.b) })) : undefined };
+}
+/**
+ * bboxAudit(page, opts) -> { ok, counts, findings:[{type, a, b, detail, box}], items, fixed, viewport }
+ * types: overlap | clearance | smallTarget | smallText | clippedText | underFixed | hScroll
+ * opts: root (selector, default body), minGap 8, minTarget 44, minFont 12, minOpacity .05, textGap (null = text/text only
+ *   checked for overlap), ignore [sel] (never collected), pairIgnore [sel] (collected, no pair checks), pairsSkip [[selA, selB]],
+ *   groups [sel] (items inside one group element are related), targets (selector override), targetIgnore [sel],
+ *   fixed (extra selector treated as fixed chrome), fixedIgnore [sel], maxIconArea .25 (bigger svg/img = decor), listItems,
+ *   iconPairs (false: icon/icon overlaps are layered art, not checked), iconText (false: text inside svg/[role=img] is part of the picture)
+ * text boxes are line boxes (font content box shrunk to line-height), so tight leading is not reported as overlap/clipping
+ */
+export const bboxAudit = (page, opts = {}) => page.evaluate(auditInPage, opts);
+export const formatAudit = (r, max = 12) => r.ok ? 'audit OK' : `audit ${Object.entries(r.counts).map(([k, v]) => `${k}=${v}`).join(' ')}\n` + r.findings.slice(0, max).map(f => `    ${f.type}: ${f.a || ''}${f.b ? ' ~ ' + f.b : ''} ${f.detail || ''}${f.culprits ? ' ' + f.culprits.join(', ') : ''}`).join('\n') + (r.findings.length > max ? `\n    ... ${r.findings.length - max} more` : '');
+
+/* ======================================================================================================
+   real-time confirmation: the one place a timing claim is proven on the wall clock
+   ====================================================================================================== */
+/**
+ * realTimeConfirm(name, fn, {claim}) runs fn on REAL time, logs it, appends a JSON line to realtime-log.jsonl.
+ * Use it once per timing claim (e.g. "a 30s hold fills at 30.0 +/- 0.3s"), then test everything else virtually.
+ */
+export async function realTimeConfirm(name, fn, opts = {}) {
+  const startedAt = new Date().toISOString(), t0 = now();
+  console.log(`[real-time] ${name}: start${opts.claim ? ' | claim: ' + opts.claim : ''}`);
+  let value, error;
+  try { value = await fn(); } catch (e) { error = e; }
+  const wallMs = Math.round(now() - t0);
+  const rec = { name, claim: opts.claim || null, startedAt, wallMs, ok: !error, value: value === undefined ? null : value, error: error ? String(error.message || error) : null };
+  try { fs.appendFileSync(opts.log || REALTIME_LOG, JSON.stringify(rec) + '\n'); } catch { }
+  console.log(`[real-time] ${name}: ${error ? 'FAILED ' + rec.error : 'done'} in ${fmtMs(wallMs)}`);
+  if (error) throw error;
+  return value;
+}
+
+/* ======================================================================================================
+   calibration cache + concurrency resolution
+   ====================================================================================================== */
+function machineKey() { return `${os.hostname()}|${os.cpus().length}cpu|${Math.round(os.totalmem() / 2 ** 30)}GB|${os.arch()}`; }
+export function readCalibration({ allowStale = true } = {}) {
+  try {
+    const c = JSON.parse(fs.readFileSync(CAL_FILE, 'utf8'));
+    if (c.machine !== machineKey()) return null;
+    c.stale = Date.now() - c.createdAt > (c.ttlHours || CAL_TTL_H) * 3600e3;
+    return c.stale && !allowStale ? null : c;
+  } catch { return null; }
+}
+/**
+ * Simple default, set from the measurements already recorded (bench-results.json, .calibration.json, PROGRESS.md):
+ *  - concurrency = cpu count (10 on this Mac): quiet-machine bench d ran 6 viewports in 8.1s at c=6 vs 13.1s serial;
+ *    the calibration sweeps put the best virtual throughput at c=10 (1.67/s), with c=12-16 slower.
+ *  - 5 contexts per browser (2 browsers at c=10): pool test at c=10 measured 1 browser 1.90/s, 2 browsers 2.33/s,
+ *    3 browsers 1.28/s, 5 browsers 0.74/s. One browser process caps out on PNG encoding + CDP dispatch.
+ * Overrides, highest first: opts.concurrency / env PTEST_CONCURRENCY, opts.browsers / env PTEST_BROWSERS.
+ * The calibration cache is consulted only when asked for (opts.useCalibration or env PTEST_USE_CALIBRATION=1),
+ * and never when it is stale or was recorded on a loaded machine (contaminated).
+ */
+export const DEFAULT_CONTEXTS_PER_BROWSER = 5;
+export const defaultConcurrency = () => Math.max(2, os.cpus().length);
+export function resolveConcurrency(opts = {}) {
+  const envB = +process.env.PTEST_BROWSERS || 0;
+  const shape = v => opts.browsers || envB || Math.max(1, Math.ceil(v / DEFAULT_CONTEXTS_PER_BROWSER));
+  if (opts.concurrency) return { value: opts.concurrency, source: 'opts.concurrency', browsers: shape(opts.concurrency) };
+  if (+process.env.PTEST_CONCURRENCY > 0) return { value: +process.env.PTEST_CONCURRENCY, source: 'env PTEST_CONCURRENCY', browsers: shape(+process.env.PTEST_CONCURRENCY) };
+  if (opts.useCalibration || process.env.PTEST_USE_CALIBRATION === '1') {
+    const cal = readCalibration({ allowStale: false }), prof = opts.profile || 'virtual';
+    if (cal && !cal.contaminated && cal[prof] && cal[prof].knee) return { value: cal[prof].knee, source: `calibration (${prof})`, browsers: opts.browsers || envB || cal[prof].browsers || shape(cal[prof].knee) };
+  }
+  const v = defaultConcurrency();
+  return { value: v, source: `default (cpu count ${v}, ${DEFAULT_CONTEXTS_PER_BROWSER} contexts per browser)`, browsers: shape(v) };
+}
+/* ======================================================================================================
+   adaptive concurrency: one machine-wide page budget shared through lease files, and a two-way controller
+   ======================================================================================================
+   Every running runMatrix (in any node process, any agent) keeps a lease file in LEASE_DIR saying how many pages it holds,
+   refreshed every tick. A run may use what the others leave free, and always at least its fair share. So 8 agents testing at
+   once share PAGE_BUDGET pages, and when 7 finish the 8th grows into the space. No caller has to guess a concurrency.
+   PTEST_CONCURRENCY / opts.concurrency become the starting point; PTEST_ADAPT=0 (or opts.adapt:false) pins it. */
+export const LEASE_DIR = process.env.PTEST_LEASE_DIR || path.join(os.tmpdir(), 'ptest-leases');
+export const pageBudget = () => +process.env.PTEST_BUDGET || os.cpus().length * 2;
+export const maxBrowsers = () => +process.env.PTEST_MAX_BROWSERS || Math.max(2, Math.ceil(os.cpus().length / 3));
+const pidAlive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+/** the other runs' leases: { runs, pages } (stale leases, dead pids or no heartbeat for 15 s, are removed) */
+export function leaseOthers(selfFile) {
+  let runs = 0, pages = 0;
+  try {
+    for (const f of fs.readdirSync(LEASE_DIR)) {
+      if (!f.endsWith('.json')) continue;
+      const p = path.join(LEASE_DIR, f); if (p === selfFile) continue;
+      let l; try { l = JSON.parse(fs.readFileSync(p, 'utf8')); } catch { continue; }
+      if (!l || !pidAlive(l.pid) || Date.now() - l.t > 15000) { try { fs.unlinkSync(p); } catch { } continue; }
+      runs++; pages += Math.max(0, +l.pages || 0);
+    }
+  } catch { }
+  return { runs, pages };
+}
+export function openLease(name) {
+  try { fs.mkdirSync(LEASE_DIR, { recursive: true }); } catch { }
+  const file = path.join(LEASE_DIR, `${process.pid}-${crypto.randomBytes(3).toString('hex')}.json`);
+  const write = (pages) => { try { fs.writeFileSync(file, JSON.stringify({ pid: process.pid, name, pages, t: Date.now() })); } catch { } };
+  const close = () => { try { fs.unlinkSync(file); } catch { } };
+  process.once('exit', close);
+  return { file, write, close };
+}
+/** the allowance for one run: what the others leave free, at least an equal share of the budget */
+export function allowance(others, budget = pageBudget()) {
+  const fair = Math.max(1, Math.floor(budget / (others.runs + 1)));
+  return Math.max(fair, budget - others.pages);
+}
+
+/**
+ * knee: highest throughput, but step back to a lower level when that level is within `within` (5%) of the higher
+ * level's throughput and the step up costs > `slow` (25%) more per case: extra parallelism that only queues.
+ */
+export function pickKnee(levels, { within = 0.05, slow = 0.25 } = {}) {
+  const ok = levels.filter(l => l.failures === 0 || l.failures == null);
+  if (!ok.length) return { knee: 1, reason: 'every level had failures' };
+  let best = ok.reduce((a, b) => b.throughput > a.throughput ? b : a);
+  const lower = ok.filter(l => l.c < best.c).sort((a, b) => b.c - a.c);
+  let reason = `max throughput ${best.throughput.toFixed(2)}/s at ${best.c}`;
+  for (const l of lower) {
+    if (l.throughput >= best.throughput * (1 - within) && best.perCaseMs > l.perCaseMs * (1 + slow)) { reason = `${l.c} is within ${within * 100}% of ${best.c}'s throughput and ${best.c} is ${Math.round((best.perCaseMs / l.perCaseMs - 1) * 100)}% slower per case`; best = l; }
+  }
+  return { knee: best.c, reason };
+}
+
+/* ======================================================================================================
+   runMatrix
+   ====================================================================================================== */
+const DEFAULT_IGNORE_CONSOLE = [/net::ERR_INTERNET_DISCONNECTED/];
+export function contextOptions(c, opts = {}) {
+  const v = vp(c.vp || c.viewport || opts.vp);
+  const touch = c.touch ?? c.hasTouch ?? opts.touch ?? (v.width < 1024);
+  return {
+    viewport: v, deviceScaleFactor: c.dpr ?? opts.dpr ?? 1, hasTouch: touch, isMobile: c.isMobile ?? opts.isMobile ?? false,
+    reducedMotion: c.reducedMotion || (c.rm ? 'reduce' : null) || opts.reducedMotion || 'no-preference',
+    colorScheme: c.colorScheme || opts.colorScheme || 'dark', ...(opts.contextOptions || {}), ...(c.contextOptions || {}),
+  };
+}
+/** launch n browsers in parallel; a launch that dies (seen: SIGKILL under heavy machine load) is retried up to 3 times */
+export async function launchPool(n = 1, launchOpts = {}) {
+  const one = async () => { let err; for (let k = 0; k < 3; k++) { try { return await chromium.launch({ channel: 'chrome', ...launchOpts }); } catch (e) { err = e; await sleepReal(500 * (k + 1)); } } throw err; };
+  return Promise.all(Array.from({ length: n }, one));
+}
+
+/**
+ * runMatrix(cases, fn, opts) -> report
+ * cases: [{ vp:'390x844', dpr, touch, rm|reducedMotion, colorScheme, isMobile, virtual, name, ...your fields }]
+ * fn(t): t = { page, context, c, i, id, dir, log, check, shot, runFor, runUntil, freezeAt, audit, realTime, errors }
+ *   return any JSON-able value (kept in report.results[i].value). throw = case failed. t.check(name, cond, detail) =
+ *   soft assertion (case fails, keeps running).
+ * opts: name, concurrency, browsers, profile ('virtual'|'realtime'), timeout (ms per case, default 90000), retries (0),
+ *   virtual (true | {time, animations}) default for cases, failOnPageError (true), failOnConsoleError (false),
+ *   ignoreConsole [re], dir (screenshots, default out/<name>), quiet, backoff (true), cacheNet (true), browser (reuse one),
+ *   out (write JSON report to this path), vp/dpr/touch defaults, contextOptions, seed (Math.random seed for every case;
+ *   case.seed per case), closeWait (2000: ms to wait for browser close; wallMs is measured before it)
+ *   case.timeout overrides opts.timeout for that case
+ */
+export async function runMatrix(cases, fn, opts = {}) {
+  const name = opts.name || 'matrix';
+  const dir = opts.dir || path.join(OUT_DIR, slug(name));
+  const conc = resolveConcurrency(opts);
+  const wantB = opts.browsers || conc.browsers || 1, perB = Math.max(1, conc.value / wantB); // contexts per browser
+  const nBrowsers = opts.pool ? opts.pool.length : opts.browser ? 1 : Math.max(1, Math.min(wantB, Math.ceil(Math.min(conc.value, cases.length) / perB)));
+  const retries = opts.retries ?? 0;
+  const ignoreConsole = [...DEFAULT_IGNORE_CONSOLE, ...(opts.ignoreConsole || [])];
+  const log = opts.quiet ? () => { } : (...a) => console.log(...a);
+  const t0 = now(), sys0 = sysSnapshot();
+  const ownPool = !opts.browser && !opts.pool;
+  const pool = opts.pool || (opts.browser ? [opts.browser] : await launchPool(nBrowsers, opts.launch));
+  const launchMs = now() - t0; const busy = pool.map(() => 0), relaunching = pool.map(() => null);
+  // adaptive (the default unless a test pins opts.concurrency, or PTEST_ADAPT=0 / opts.adapt:false): the start value is only a start
+  const adaptive = opts.adapt ?? (process.env.PTEST_ADAPT === '0' ? false : conc.source !== 'opts.concurrency');
+  const lease = openLease(name), budget = opts.budget || pageBudget();
+  let limit = Math.max(1, Math.min(conc.value, cases.length)); const startLimit = limit;
+  if (adaptive) limit = Math.max(1, Math.min(limit, allowance(leaseOthers(lease.file), budget)));
+  const startConcurrency = limit; // after the shared-budget clamp
+  lease.write(limit);
+  log(`[ptest] ${name}: ${cases.length} cases, concurrency ${limit}${adaptive ? ' (adaptive start)' : ''} (${conc.source}), ${pool.length} browser(s)`);
+  const results = new Array(cases.length);
+  const backoffs = []; const done = []; let best = 0, lastAdjust = 0, pendingBack = null, mixNoted = false;
+  // a slower window is only the machine's fault when the machine is strained: cpu saturated, or macOS memory pressure raised.
+  // otherwise the queue simply reached heavier cases (a suite of 15 s cases after 1 s ones), and fewer contexts would only slow the run.
+  // (not the load average: on macOS it counts threads waiting on swap and reads 80+ with the cpu 30% busy.)
+  const cpuTimes = () => os.cpus().reduce((a, c) => { const t = c.times; a.idle += t.idle; a.total += t.user + t.nice + t.sys + t.idle + t.irq; return a; }, { idle: 0, total: 0 });
+  let winCpu = cpuTimes();
+  const strainOf = opts.strained || (() => {
+    const c = cpuTimes(), busy = c.total > winCpu.total ? 100 * (1 - (c.idle - winCpu.idle) / (c.total - winCpu.total)) : 0;
+    const lvl = +sh('sysctl', ['-n', 'kern.memorystatus_vm_pressure_level']).trim() || 1; // 1 normal, 2 warn, 4 critical
+    return { strained: busy >= 90 || lvl >= 2, cpuBusyPct: Math.round(busy), pressureLevel: lvl };
+  });
+  const ids = new Map();
+  let rtActive = 0, timeouts = 0, peak = limit, pumpRef = () => { }, launching = null;
+  const adapt = [];
+  const perBrowser = Math.max(1, opts.contextsPerBrowser || DEFAULT_CONTEXTS_PER_BROWSER), maxB = opts.maxBrowsers || maxBrowsers();
+  const hardMax = opts.maxConcurrency || +process.env.PTEST_MAX || os.cpus().length * 3;
+  // grow the browser pool with the limit, so one chrome process never becomes the bottleneck (one browser pins a core)
+  function growPool() {
+    if (!ownPool || launching || pool.length >= maxB || limit <= pool.length * perBrowser) return;
+    launching = launchPool(1, opts.launch).then(([b]) => { pool.push(b); busy.push(0); relaunching.push(null); log(`[ptest] adapt: browser ${pool.length} launched (limit ${limit})`); })
+      .catch(() => { }).finally(() => { launching = null; pumpRef(); });
+  }
+  // the controller: every ~2 s, from live measurements. strained (cpu >= 90% machine-wide, macOS memory pressure, or a case
+  // timed out) -> cut 25%; over the shared allowance -> drop to it; cpu < 75% with work queued and every slot busy -> add 25%
+  // (at least 1), never while a real-time case runs, and not for 3 ticks after a cut (no oscillation between agents)
+  let ctlCpu = cpuTimes(), ctlTimeouts = 0, cool = 0, tick = 0;
+  const ctlStrain = opts.strained || (() => {
+    const c = cpuTimes(), busyPct = c.total > ctlCpu.total ? 100 * (1 - (c.idle - ctlCpu.idle) / (c.total - ctlCpu.total)) : 0; ctlCpu = c;
+    const lvl = +sh('sysctl', ['-n', 'kern.memorystatus_vm_pressure_level']).trim() || 1;
+    return { strained: busyPct >= 90 || lvl >= 2, cpuBusyPct: Math.round(busyPct), pressureLevel: lvl };
+  });
+  let activeNow = () => 0, queued = () => 0;
+  function control() {
+    tick++;
+    const st = ctlStrain(), others = leaseOthers(lease.file), allow = Math.min(hardMax, allowance(others, budget));
+    const newTimeouts = timeouts - ctlTimeouts; ctlTimeouts = timeouts;
+    const want = activeNow() + queued(); // never hold more slots than there is work
+    let nl = limit, why = '';
+    if ((st.strained || newTimeouts > 0) && limit > 1) { nl = Math.max(1, Math.floor(limit * 0.75)); why = newTimeouts ? `${newTimeouts} case timeout(s)` : `strained (cpu ${st.cpuBusyPct}%, pressure ${st.pressureLevel})`; cool = 3; }
+    else if (limit > allow) { nl = Math.max(1, allow); why = `shared budget: ${others.pages} pages in ${others.runs} other run(s) of ${budget}`; }
+    else if (cool > 0) cool--;
+    else if (!rtActive && st.cpuBusyPct < 75 && queued() > 0 && activeNow() >= limit && limit < Math.min(allow, want)) {
+      nl = Math.min(allow, want, limit + Math.max(1, Math.ceil(limit * 0.25))); why = `headroom (cpu ${st.cpuBusyPct}%, allowance ${allow})`;
+    }
+    if (nl !== limit) {
+      adapt.push({ tick, at: Math.round(now() - t0), from: limit, to: nl, why, cpuBusyPct: st.cpuBusyPct, pressureLevel: st.pressureLevel, rtActive, active: activeNow(), otherRuns: others.runs, otherPages: others.pages });
+      if (nl < limit) backoffs.push({ at: done.length, from: limit, to: nl, why, strain: st });
+      log(`[ptest] adapt: concurrency ${limit} -> ${nl} (${why})`);
+      limit = nl; peak = Math.max(peak, limit); growPool(); pumpRef();
+    }
+    lease.write(limit);
+  }
+  const ctlTimer = adaptive ? setInterval(control, opts.adaptMs || 2000) : setInterval(() => lease.write(limit), 2000);
+  ctlTimer.unref?.();
+
+  async function attempt(i, c, id) {
+    let bi = 0; for (let k = 1; k < pool.length; k++) if (busy[k] < busy[bi]) bi = k; // least-loaded browser
+    if (ownPool && !pool[bi].isConnected()) {
+      if (!relaunching[bi]) { log(`[ptest] browser ${bi} disconnected: relaunching`); relaunching[bi] = chromium.launch({ channel: 'chrome', ...(opts.launch || {}) }).then(b => { pool[bi] = b; relaunching[bi] = null; return b; }); }
+      await relaunching[bi];
+    }
+    const browser = pool[bi]; busy[bi]++;
+    const timeout = c.timeout ?? opts.timeout ?? 90000;
+    const r = { i, id, case: c, ok: false, ms: 0, realWaitMs: 0, pageErrors: [], consoleErrors: [], checks: [], shots: [], realtime: [], value: undefined, error: null };
+    const s = now(); r.startMs = Math.round(s - t0); let ctx, timer;
+    // a timing-sensitive case (case.realtime / opts.realtime) counts from the moment it is scheduled (context creation can take
+    // seconds on a loaded machine); t.realTime() proofs count for their duration. the controller never ramps up while one runs
+    const rt = !!(c.realtime ?? opts.realtime); if (rt) rtActive++;
+    try {
+      ctx = await browser.newContext(contextOptions(c, opts));
+      if (opts.cacheNet !== false) await ctx.route(NET_RE, netCached);
+      const page = await ctx.newPage();
+      page.on('pageerror', e => r.pageErrors.push(String(e.message || e)));
+      page.__ptestTimerError = msg => r.pageErrors.push(msg); // app errors in timers/rAF under virtual time (see clockCall)
+      page.on('console', m => { if (m.type() === 'error' && !ignoreConsole.some(re => re.test(m.text()))) r.consoleErrors.push(m.text()); });
+      const virt = c.virtual ?? opts.virtual ?? false;
+      if (virt) await installVirtualTime(page, typeof virt === 'object' ? virt : {});
+      const seed = c.seed ?? opts.seed; if (seed != null && seed !== false) await page.addInitScript(seedScript(seed));
+      const origWait = page.waitForTimeout.bind(page);
+      page.waitForTimeout = async ms => { r.realWaitMs += ms; return origWait(ms); };
+      const t = {
+        page, context: ctx, c, i, id, dir: c.dir || dir, browser,
+        log: (...a) => log(`  [${id}]`, ...a),
+        check: (nm, cond, detail) => { r.checks.push({ name: nm, ok: !!cond, detail: detail === undefined ? null : detail }); return !!cond; },
+        shot: async (label, o = {}) => { const p = await shot(page, { dir: c.dir || dir, id, label, ...o }); r.shots.push(p); return p; },
+        goto: (url = c.url || opts.url || DUSK_URL, o) => page.goto(url, o),
+        // virtual case: advance the fake clock. real-time case: the same call waits on the wall clock (so one test runs either way)
+        runFor: ms => page.__ptestVirtual ? runFor(page, ms) : page.waitForTimeout(ms),
+        runUntil: async (p, o = {}) => {
+          if (page.__ptestVirtual) return runUntil(page, p, o);
+          const s0 = now(); try { await page.waitForFunction(p, o.arg, { timeout: o.max ?? 60000, polling: o.step ?? 50 }); } finally { r.realWaitMs += now() - s0; } return Math.round(now() - s0);
+        },
+        frames: n => realFrames(page, n), fastForward: ms => fastForward(page, ms),
+        freezeAt: (tt, o) => freezeAt(page, tt, o), mark: () => markAnimations(page), thaw: () => thawAnimations(page),
+        audit: o => bboxAudit(page, o), contrast: (sel, o) => contrastAt(page, sel, o),
+        realTime: async (nm, f, o = {}) => {
+          if (page.__ptestVirtual) throw new Error('t.realTime() needs a real-time case: set virtual:false on this case');
+          rtActive++; try { const v = await realTimeConfirm(`${name}/${id}/${nm}`, f, o); r.realtime.push(nm); return v; } finally { rtActive--; }
+        },
+        errors: r,
+      };
+      const run = (async () => fn(t))();
+      run.catch(() => { });
+      r.value = await Promise.race([run, new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`timeout after ${timeout}ms`)), timeout); })]);
+      const failed = r.checks.filter(k => !k.ok);
+      if (failed.length) r.error = 'checks failed: ' + failed.map(k => k.name + (k.detail != null ? ` (${typeof k.detail === 'string' ? k.detail : JSON.stringify(k.detail).slice(0, 160)})` : '')).join('; ');
+      else if (opts.failOnPageError !== false && r.pageErrors.length) r.error = 'page error: ' + r.pageErrors[0];
+      else if (opts.failOnConsoleError && r.consoleErrors.length) r.error = 'console error: ' + r.consoleErrors[0];
+      r.ok = !r.error;
+    } catch (e) { r.error = String(e && e.message || e).split('\n')[0]; r.ok = false; }
+    finally { clearTimeout(timer); if (ctx) await ctx.close().catch(() => { }); r.ms = now() - s; busy[bi]--; if (rt) rtActive--; if (/^timeout after/.test(r.error || '')) timeouts++; }
+    return r;
+  }
+  async function runOne(i) {
+    const c = cases[i]; let id = caseId(c);
+    if (ids.has(id)) { ids.set(id, ids.get(id) + 1); id = `${id}-${ids.get(id)}`; } else ids.set(id, 1);
+    let r, n = 0;
+    do { r = await attempt(i, c, id); r.attempts = ++n; } while (!r.ok && n <= retries);
+    results[i] = r;
+    if (!opts.quiet && opts.progress !== false) log(`  ${r.ok ? 'ok  ' : 'FAIL'} ${pad(id, 40)} ${pad(fmtMs(r.ms), 7)}${r.ok ? '' : ' ' + r.error.slice(0, 160)}`);
+  }
+  // live back-off: only when the last window's throughput falls well below the best window so far AND the machine is strained
+  function onDone() {
+    done.push(now());
+    if (opts.backoff === false || adaptive) return; // adaptive runs: the controller owns the limit
+    const W = Math.max(4, limit * 2);
+    if (done.length < W * 2 || done.length - lastAdjust < W) return;
+    const win = done.slice(-W), thr = (W - 1) / ((win[W - 1] - win[0]) / 1000);
+    if (pendingBack) { // did the back-off help? if the next window is no faster, the slowdown was the cases, not the concurrency
+      if (thr <= pendingBack.thr * 1.05) { log(`[ptest] back-off did not raise throughput (${thr.toFixed(2)}/s): concurrency back to ${pendingBack.from}`); backoffs.push({ at: done.length, restored: pendingBack.from, windowThroughput: +thr.toFixed(2) }); limit = pendingBack.from; }
+      pendingBack = null; best = Math.max(best, thr);
+    } else if (thr > best) best = thr;
+    else if (thr < best * 0.6 && limit > 1) {
+      const st = strainOf();
+      if (st.strained) {
+        const nl = Math.max(1, Math.floor(limit * 0.75));
+        backoffs.push({ at: done.length, from: limit, to: nl, windowThroughput: +thr.toFixed(2), best: +best.toFixed(2), strain: st, sys: sysSnapshot() });
+        log(`[ptest] back-off: throughput ${thr.toFixed(2)}/s < 60% of best ${best.toFixed(2)}/s and the machine is strained (cpu ${st.cpuBusyPct}%, pressure ${st.pressureLevel}), concurrency ${limit} -> ${nl}`);
+        pendingBack = { from: limit, thr }; limit = nl;
+      } else if (!mixNoted) { mixNoted = true; log(`[ptest] slower window (${thr.toFixed(2)}/s vs best ${best.toFixed(2)}/s) but the machine is not strained (cpu ${st.cpuBusyPct}%, pressure ${st.pressureLevel}): heavier cases, concurrency kept at ${limit}`); }
+    }
+    lastAdjust = done.length; winCpu = cpuTimes();
+  }
+  await new Promise(resolve => {
+    let next = 0, active = 0, finished = 0;
+    activeNow = () => active; queued = () => cases.length - next;
+    if (!cases.length) return resolve();
+    const pump = pumpRef = () => {
+      while (active < limit && next < cases.length) {
+        const i = next++; active++;
+        runOne(i).catch(e => { results[i] = { i, id: caseId(cases[i]), case: cases[i], ok: false, error: 'runner: ' + e.message, ms: 0 }; })
+          .finally(() => { active--; finished++; onDone(); if (finished === cases.length) resolve(); else pump(); });
+      }
+    };
+    pump();
+  });
+  clearInterval(ctlTimer); lease.close(); if (launching) await launching;
+  const tRun = now();
+  const wallMs = tRun - t0, sumMs = results.reduce((a, r) => a + (r.ms || 0), 0); // wall = launch + cases, measured before the close
+  // close without letting a slow browser shutdown (seen: 7-10 s under load) hold the run: wait at most closeWait (2 s), the rest
+  // finishes in the background, and Playwright kills its browsers when the node process exits
+  if (ownPool) await Promise.race([Promise.all(pool.map(b => b.close().catch(() => { }))), sleepReal(opts.closeWait ?? 2000)]);
+  const closeMs = now() - tRun;
+  const failures = results.filter(r => !r.ok);
+  const report = {
+    name, wallMs: Math.round(wallMs), sumMs: Math.round(sumMs), speedup: +(sumMs / wallMs).toFixed(2), launchMs: Math.round(launchMs), runMs: Math.round(tRun - t0 - launchMs), closeMs: Math.round(closeMs),
+    concurrency: startLimit, concurrencySource: conc.source, finalConcurrency: limit, browsers: pool.length,
+    adaptive, startConcurrency, peakConcurrency: peak, budget, adapt, seed: opts.seed ?? null, cases: cases.length,
+    passed: results.length - failures.length, failed: failures.length, ok: !failures.length, backoffs, sys: sysDelta(sys0, sysSnapshot()), dir,
+    results: results.map(r => ({ ...r, ms: Math.round(r.ms || 0) })),
+  };
+  const slowWaits = results.filter(r => r.realWaitMs > 2000 && !(r.realtime && r.realtime.length) && !(r.case && r.case.virtual === false && opts.profile === 'realtime'));
+  if (!opts.quiet) {
+    console.log(formatSummary(report));
+    if (slowWaits.length) console.log(`[ptest] WARNING ${slowWaits.length} case(s) spent > 2s in page.waitForTimeout (real time), e.g. ${slowWaits[0].id}: ${fmtMs(slowWaits[0].realWaitMs)}. Use virtual time (t.runFor / t.runUntil) or mark the claim with t.realTime().`);
+  }
+  if (opts.out) { fs.mkdirSync(path.dirname(opts.out), { recursive: true }); fs.writeFileSync(opts.out, JSON.stringify(report, null, 1)); }
+  return report;
+}
+/**
+ * runSuites([{name, cases, fn, after?, opts?}], opts) runs several test files' matrices in ONE pool (one concurrency budget,
+ * one set of browsers) instead of several node processes each starting 10 contexts. Each suite keeps its own case ids
+ * (prefixed with the suite name), screenshot dir (suite opts.dir or out/<suite name>), timeout and virtual default.
+ * Returns { ...combined report, suites: { [name]: { name, dir, cases, passed, failed, ok, results, afterValue } } }.
+ * suite.after(subReport) runs after the pool finishes (e.g. contact sheets).
+ */
+export async function runSuites(suites, opts = {}) {
+  const cases = [];
+  suites.forEach((su, k) => {
+    const so = su.opts || {}, sdir = so.dir || path.join(OUT_DIR, slug(su.name));
+    for (const c of su.cases) cases.push({ ...c, name: `${su.name}-${c.name ? c.name : caseId(c)}`, __suite: k, dir: c.dir || sdir,
+      timeout: c.timeout ?? so.timeout, virtual: c.virtual ?? so.virtual, seed: c.seed ?? so.seed });
+  });
+  for (const c of cases) for (const k of ['timeout', 'virtual', 'seed']) if (c[k] === undefined) delete c[k];
+  const rep = await runMatrix(cases, t => suites[t.c.__suite].fn(t), { ...opts, name: opts.name || suites.map(s => s.name).join('+') });
+  rep.suites = {};
+  for (const [k, su] of suites.entries()) {
+    const results = rep.results.filter(r => r.case && r.case.__suite === k);
+    const sub = { name: su.name, dir: (su.opts && su.opts.dir) || path.join(OUT_DIR, slug(su.name)), cases: results.length, passed: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results };
+    sub.ok = !sub.failed;
+    if (su.after) { try { sub.afterValue = await su.after(sub); } catch (e) { sub.afterError = String(e.message || e); } }
+    rep.suites[su.name] = sub;
+    if (!opts.quiet) console.log(`[ptest] suite ${su.name}: ${sub.passed}/${sub.cases} passed${sub.afterError ? ' (after() failed: ' + sub.afterError + ')' : ''}`);
+  }
+  return rep;
+}
+export function formatSummary(rep) {
+  const L = [];
+  L.push(`\n${pad('#', 4)}${pad('case', 42)}${pad('status', 7)}${pad('time', 9)}${pad('realWait', 9)}${pad('pgErr', 6)}${pad('conErr', 7)}note`);
+  for (const r of rep.results) L.push(`${pad(r.i, 4)}${pad(r.id, 42)}${pad(r.ok ? 'ok' : 'FAIL', 7)}${pad(fmtMs(r.ms), 9)}${pad(r.realWaitMs ? fmtMs(r.realWaitMs) : '-', 9)}${pad((r.pageErrors || []).length, 6)}${pad((r.consoleErrors || []).length, 7)}${r.ok ? (r.realtime && r.realtime.length ? 'REAL-TIME: ' + r.realtime.join(',') : '') : (r.error || '').slice(0, 120)}`);
+  L.push(`[ptest] ${rep.name}: ${rep.passed}/${rep.cases} passed | wall ${fmtMs(rep.wallMs)} vs summed case time ${fmtMs(rep.sumMs)} = ${rep.speedup}x parallel speed-up (launch ${fmtMs(rep.launchMs)}, close ${fmtMs(rep.closeMs)}) | concurrency ${rep.concurrency}${rep.finalConcurrency !== rep.concurrency ? '->' + rep.finalConcurrency : ''} x ${rep.browsers} browser(s) | machine cpu ${rep.sys.cpuBusyPct}% busy, load ${rep.sys.load1}, swapDelta ${rep.sys.swapUsedDeltaMB}MB pageouts+${rep.sys.pageoutsDelta}`);
+  return L.join('\n');
+}
+
+/* ======================================================================================================
+   dusk prototype helpers (used by the examples and the calibration workload)
+   ====================================================================================================== */
+export const dusk = {
+  /** goto the prototype (optionally ?query), let boot timers run (virtual or real) */
+  async open(t, { query = '', settle = 600 } = {}) {
+    await t.page.goto(DUSK_URL + query);
+    await t.runFor(settle);
+  },
+  /** jump to step n (0..6) */
+  async jump(t, n, { question = 'will i get the job?', reversals = true, settle = 1500 } = {}) {
+    await t.page.evaluate(([n, q, rev]) => { window.__dusk.S.useReversals = rev; window.__dusk.S.question = q; window.__dusk.jumpTo(n); }, [n, question, reversals]);
+    if (settle) await t.runFor(settle);
+  },
+  /** step ii -> energy, wait until the moon has risen onto the stage */
+  async energy(t, o = {}) {
+    await dusk.jump(t, 2, { ...o, settle: 0 });
+    await t.runUntil(() => window.__dusk.risen, { step: 50, max: 10000 });
+  },
+  async moonCenter(t) { const b = await t.page.locator('#lune').boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; },
+  /** b10 Z11: the deck under the mascot is the press target (#deckBtn); builds before it only have the moon */
+  async cardsCenter(t) { const b = await t.page.locator((await t.page.$('#deckBtn')) ? '#deckBtn' : '#lune').boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; },
+  async press(t) { const p = await dusk.cardsCenter(t); await t.page.mouse.move(p.x, p.y); await t.page.mouse.down(); },
+  async release(t) { await t.page.mouse.up(); },
+};
+
+/* ======================================================================================================
+   calibrate(): measure throughput at increasing concurrency on a representative workload
+   ====================================================================================================== */
+/** representative case: open, energy, hold 6s virtual, audit, screenshot */
+export async function calibrationWorkload(t) {
+  await dusk.open(t);
+  await dusk.energy(t);
+  await dusk.press(t);
+  if (t.page.__ptestVirtual) await t.runFor(6000); else await t.page.waitForTimeout(3000);
+  const a = await t.audit({ root: '#s2' });
+  await t.page.screenshot();
+  await dusk.release(t);
+  return { findings: a.findings.length, progress: await t.page.evaluate(() => window.__dusk.progress) };
+}
+async function measureLevel(c, { profile, browsers, casesPer, workload }) {
+  const n = Math.max(casesPer, c * 2);
+  const cases = Array.from({ length: n }, (_, i) => ({ name: `cal-${profile}-${c}-${i}`, vp: i % 2 ? '1440x900' : '390x844', virtual: profile === 'virtual' }));
+  const pool = await launchPool(browsers);
+  const s0 = sysSnapshot(); let mid = null;
+  const midT = setTimeout(() => { mid = sysSnapshot(); }, 1500);
+  const t0 = now();
+  const rep = await runMatrix(cases, workload, { name: `calibrate-${profile}-${c}`, concurrency: c, quiet: true, backoff: false, pool, timeout: 120000 });
+  const wall = now() - t0; clearTimeout(midT);
+  await Promise.all(pool.map(b => b.close().catch(() => { })));
+  const s1 = sysSnapshot();
+  const ok = rep.results.filter(r => r.ok);
+  return { c, browsers, cases: n, failures: rep.failed, firstError: rep.failed ? rep.results.find(r => !r.ok).error : undefined, wallMs: Math.round(wall), throughput: +(n / (wall / 1000)).toFixed(3), perCaseMs: Math.round(median(ok.map(r => r.ms))), sys: { ...sysDelta(s0, s1), freeMemPctMid: mid ? mid.freeMemPct : null, swapUsedMBMid: mid ? mid.swapUsedMB : null } };
+}
+export async function calibrate(opts = {}) {
+  const C0 = os.cpus().length;
+  const levelsV = opts.levels || (opts.quick ? [1, 4, 8, 12, 16] : [1, 2, 4, 6, 8, 10, 12, 16, 20, 24, 32]);
+  const levelsR = opts.realtimeLevels || (opts.quick ? [8, 16] : [4, 8, 16, 24, 32, 48]);
+  const workload = opts.workload || calibrationWorkload;
+  const casesPer = opts.casesPer || 8;
+  const res = { machine: machineKey(), createdAt: Date.now(), ttlHours: CAL_TTL_H, chrome: null, sysBefore: sysSnapshot(),
+    workload: workload === calibrationWorkload ? 'dusk energy: open, rise, hold 6s virtual (3s real for realtime), bboxAudit #s2, fast screenshot; 390x844 + 1440x900 alternating' : 'custom',
+    rules: 'phase 1: best contexts-per-browser at concurrency = cpu count; phase 2: concurrency sweep with that pool shape. knee = max throughput; step back to a lower level if within 5% throughput while the higher costs >25% more per case. No memory floor: memory pressure, swap use and pageout/swapout deltas are recorded per level.' };
+  { const b = await chromium.launch({ channel: 'chrome' }); res.chrome = b.version(); await b.close(); }
+  await runMatrix([{ name: 'warm', vp: '390x844', virtual: true }], workload, { concurrency: 1, quiet: true }); // font cache warm
+  const line = (profile, m) => console.log(`[calibrate] ${profile} c=${pad(m.c, 3)} browsers=${pad(m.browsers, 3)}${pad(m.cases + ' cases', 9)} wall ${pad(fmtMs(m.wallMs), 7)} throughput ${pad(m.throughput.toFixed(2) + '/s', 8)} perCase ${pad(fmtMs(m.perCaseMs), 7)} gain ${pad(m.gainVsPrev == null ? '-' : m.gainVsPrev + '%', 7)} slowdown ${pad(m.perCaseSlowdownVsPrev == null ? '-' : m.perCaseSlowdownVsPrev + '%', 7)} fail ${m.failures} | free ${m.sys.freeMemPct}% (mid ${m.sys.freeMemPctMid}%) pressure ${m.sys.pressureLevel} swap ${m.sys.swapUsedMB}MB (${m.sys.swapUsedDeltaMB >= 0 ? '+' : ''}${m.sys.swapUsedDeltaMB}) pageouts +${m.sys.pageoutsDelta} swapouts +${m.sys.swapoutsDelta} cpu ${m.sys.cpuBusyPct}% load ${m.sys.load1}`);
+  // phase 1: pool shape. PNG encoding + CDP dispatch live in the browser process, so one browser saturates long before the CPUs do
+  const shapes = [...new Set(opts.poolSizes || [1, 2, Math.ceil(C0 / 4), Math.ceil(C0 / 2), C0])].filter(b => b <= C0).sort((a, b) => a - b);
+  const shape = [];
+  for (const b of shapes) { const m = await measureLevel(C0, { profile: 'virtual', browsers: b, casesPer: Math.max(casesPer, C0 * 2), workload }); shape.push(m); line('pool', m); }
+  const bestS = shape.reduce((a, b) => b.throughput > a.throughput ? b : a);
+  const pick = shape.find(m => m.throughput >= bestS.throughput * 0.95) || bestS; // fewest browsers within 5% of the best
+  const k = C0 / pick.browsers;
+  res.pool = { atConcurrency: C0, tested: shape, contextsPerBrowser: +k.toFixed(2), rule: 'fewest browsers within 5% of the best throughput at concurrency = cpu count' };
+  console.log(`[calibrate] pool: ${pick.browsers} browser(s) at c=${C0} -> ${k.toFixed(1)} contexts per browser`);
+  const sweep = async (profile, levels) => {
+    const out = []; let flat = 0;
+    for (const c of levels) {
+      let m;
+      try { m = await measureLevel(c, { profile, browsers: Math.max(1, Math.ceil(c / k)), casesPer, workload }); }
+      catch (e) { console.log(`[calibrate] ${profile} c=${c}: level failed (${String(e.message).split('\n')[0]}), stopping the sweep`); out.push({ c, browsers: Math.ceil(c / k), failures: 1, throughput: 0, perCaseMs: 0, error: String(e.message).split('\n')[0] }); break; }
+      const prev = out[out.length - 1];
+      m.gainVsPrev = prev ? +((m.throughput / prev.throughput - 1) * 100).toFixed(1) : null;
+      m.perCaseSlowdownVsPrev = prev ? +((m.perCaseMs / prev.perCaseMs - 1) * 100).toFixed(1) : null;
+      out.push(m); line(profile, m);
+      if (prev && m.gainVsPrev < 5) flat++; else flat = 0;
+      if (flat >= 2 && !opts.full) { console.log(`[calibrate] ${profile}: two levels without a 5% gain, stopping the sweep`); break; }
+    }
+    return out;
+  };
+  const v = await sweep('virtual', levelsV);
+  res.virtual = { levels: v, ...pickKnee(v) }; res.virtual.browsers = Math.max(1, Math.ceil(res.virtual.knee / k));
+  console.log(`[calibrate] virtual knee = ${res.virtual.knee} on ${res.virtual.browsers} browser(s): ${res.virtual.reason}`);
+  res.browsers = { pick: res.virtual.browsers };
+  if (!opts.skipRealtime) {
+    const r = await sweep('realtime', levelsR);
+    res.realtime = { levels: r, ...pickKnee(r) }; res.realtime.browsers = Math.max(1, Math.ceil(res.realtime.knee / k));
+    console.log(`[calibrate] realtime knee = ${res.realtime.knee} on ${res.realtime.browsers} browser(s): ${res.realtime.reason}`);
+  }
+  res.sysAfter = sysSnapshot();
+  const loads = [...(res.pool.tested || []), ...res.virtual.levels].map(l => l.sys && l.sys.load1).filter(x => x != null);
+  res.maxLoadDuring = Math.max(res.sysBefore.load1, ...loads);
+  // note: on this Mac the load average climbed to 500 while the CPUs were 73% idle (other agents' browsers), so it is recorded, not trusted
+  if (res.maxLoadDuring > 2 * C0) { res.contaminated = true; console.log(`[calibrate] WARNING load average reached ${res.maxLoadDuring} (> 2 x ${C0} cpus): other work was running; compare the cpu% column, re-run when the machine is quiet.`); }
+  fs.writeFileSync(CAL_FILE, JSON.stringify(res, null, 1));
+  console.log(`[calibrate] wrote ${CAL_FILE}`);
+  console.log('[calibrate] optional: runMatrix keeps its default (cpu count, 5 contexts per browser) unless PTEST_USE_CALIBRATION=1 is set, and ignores a contaminated or stale calibration');
+  return res;
+}
+
+/* ======================================================================================================
+   CLI
+   ====================================================================================================== */
+async function cli(argv) {
+  const [cmd, ...rest] = argv;
+  if (cmd === 'calibrate') {
+    const cur = readCalibration({ allowStale: false });
+    if (cur && !rest.includes('--force')) { console.log(`[calibrate] fresh calibration exists (virtual knee ${cur.virtual.knee} on ${cur.virtual.browsers} browser(s), realtime knee ${cur.realtime && cur.realtime.knee}); --force to redo`); return; }
+    await calibrate({ quick: rest.includes('--quick'), full: rest.includes('--full'), skipRealtime: rest.includes('--no-realtime') });
+  } else if (cmd === 'bench') {
+    const { runBenchmarks } = await import(pathToFileURL(path.join(PTEST_DIR, 'examples', 'bench.mjs')).href);
+    await runBenchmarks(rest);
+  } else if (cmd === 'run') {
+    // node ptest.mjs run a.mjs b.mjs ... : each file exports `suite` (or `bench`) = {name, cases, fn, after?, opts?}, or `cases` + `fn`
+    const files = rest.filter(f => !f.startsWith('--')); const suites = [];
+    for (const f of files) {
+      const m = await import(pathToFileURL(path.resolve(f)).href);
+      const su = m.suite || m.bench || (m.cases && m.fn ? { name: path.basename(f, path.extname(f)), cases: m.cases, fn: m.fn, after: m.after, opts: m.opts } : null);
+      if (!su) throw new Error(`${f}: export suite = {name, cases, fn} (or cases + fn)`);
+      suites.push(su);
+    }
+    const rep = await runSuites(suites);
+    process.exitCode = rep.ok ? 0 : 1; return;
+  } else if (cmd === 'info') {
+    console.log(JSON.stringify({ concurrency: resolveConcurrency(), calibration: readCalibration() && { createdAt: new Date(readCalibration().createdAt).toISOString(), stale: readCalibration().stale }, sys: sysSnapshot() }, null, 1));
+  } else {
+    console.log('usage: node ptest.mjs run file.mjs [file2.mjs ...] (one pool for all) | node ptest.mjs calibrate [--force] [--quick] [--full] [--no-realtime] (optional) | node ptest.mjs bench [a b c d] [--serial-only|--parallel-only|--realtime-baseline] | node ptest.mjs info');
+  }
+}
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  cli(process.argv.slice(2)).then(() => process.exit(process.exitCode || 0), e => { console.error(e); process.exit(1); });
+}
